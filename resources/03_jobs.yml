@@ -1,0 +1,72 @@
+resources:
+  jobs:
+    careflow360_job:
+      name: careflow360-end-to-end
+      queue:
+        enabled: true
+      tags:
+        project: careflow360
+        domain: healthcare
+      tasks:
+        - task_key: generate_sample_events
+          notebook_task:
+            notebook_path: ../src/notebooks/01_generate_sample_data.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${resources.schemas.pipeline_schema.name}
+              volume: ${resources.volumes.landing_volume.name}
+              num_patients: "1200"
+              num_batches: "20"
+
+        - task_key: refresh_lakehouse
+          depends_on:
+            - task_key: generate_sample_events
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.hospital_pipeline.id}
+            full_refresh: false
+
+        - task_key: create_presentation_views
+          depends_on:
+            - task_key: refresh_lakehouse
+          notebook_task:
+            notebook_path: ../src/notebooks/03_create_views.py
+            base_parameters:
+              catalog: ${var.catalog}
+              pipeline_schema: ${resources.schemas.pipeline_schema.name}
+              bronze_schema: ${resources.schemas.bronze_schema.name}
+              silver_schema: ${resources.schemas.silver_schema.name}
+              gold_schema: ${resources.schemas.gold_schema.name}
+
+        - task_key: create_policy_docs
+          depends_on:
+            - task_key: create_presentation_views
+          notebook_task:
+            notebook_path: ../src/notebooks/05_create_policy_docs.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${resources.schemas.gold_schema.name}
+
+        - task_key: train_triage_model
+          depends_on:
+            - task_key: create_presentation_views
+          notebook_task:
+            notebook_path: ../src/notebooks/04_train_triage_model.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${resources.schemas.gold_schema.name}
+              pipeline_schema: ${resources.schemas.pipeline_schema.name}
+              experiment_path: ${resources.experiments.triage_experiment.name}
+              model_name: ${var.model_name}
+
+        - task_key: validate_project
+          depends_on:
+            - task_key: create_policy_docs
+            - task_key: train_triage_model
+          notebook_task:
+            notebook_path: ../src/notebooks/06_validate.py
+            base_parameters:
+              catalog: ${var.catalog}
+              bronze_schema: ${resources.schemas.bronze_schema.name}
+              silver_schema: ${resources.schemas.silver_schema.name}
+              gold_schema: ${resources.schemas.gold_schema.name}
+              pipeline_schema: ${resources.schemas.pipeline_schema.name}

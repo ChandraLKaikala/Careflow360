@@ -1,0 +1,26 @@
+bundle:
+  name: careflow360
+  engine: direct
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog. Run SELECT current_catalog() to discover it.
+  schema:
+    description: Project schema.
+    default: careflow360
+  landing_volume:
+    description: Managed volume for source/replay files.
+    default: landing
+  model_name:
+    description: Unity Catalog model name.
+    default: triage_acuity_model
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
