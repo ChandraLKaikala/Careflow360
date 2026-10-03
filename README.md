@@ -110,3 +110,30 @@ Careflow360/
 
 ## License
 Portfolio/demo project. All data is synthetic.
+
+## 🔄 Daily Incremental Pipeline (Added 2026-10-03)
+
+### Automated Data Growth
+- **Schedule**: Daily at 2:00 AM UTC
+- **Job ID**: 484367296292508
+- **Growth**: +100 patients per day across all layers
+
+### What Happens Daily:
+1. 🎲 Generate 100 new synthetic patients
+2. 📊 Pipeline refresh (bronze → silver → gold)
+3. 🔍 Update presentation views
+4. 🤖 Retrain ML model
+
+### Growth Projection:
+| Timeline | Patient Count |
+|----------|--------------|
+| Current  | 600          |
+| Week 1   | 1,300        |
+| Month 1  | 3,600        |
+| Month 3  | 9,600        |
+
+**16 of 17 tables grow automatically** with each run, keeping your dashboard and analytics up-to-date!
+
+---
+
+For detailed changes, see [CHANGELOG.md](CHANGELOG.md)
