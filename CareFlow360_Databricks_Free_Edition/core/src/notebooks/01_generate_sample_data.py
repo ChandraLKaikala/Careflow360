@@ -112,7 +112,8 @@ def iso(ts):
 
 def write_jsonl(path, records):
     payload = "\n".join(json.dumps(record, separators=(",", ":")) for record in records) + "\n"
-    dbutils.fs.put(path, payload, True)
+    # Never overwrite Auto Loader landing files, including after interrupted replays.
+    dbutils.fs.put(path, payload, False)
 
 
 def synthetic_triage(age):
