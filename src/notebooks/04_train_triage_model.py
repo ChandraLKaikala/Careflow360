@@ -14,7 +14,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
@@ -60,10 +60,15 @@ y = pdf["triage_acuity"].astype(int)
 if y.nunique() < 2:
     raise ValueError("Training target contains fewer than 2 classes")
 
-stratify = y if y.value_counts().min() >= 2 else None
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.25, random_state=42, stratify=stratify
-)
+# Group by patient: never evaluate on another encounter from a training patient.
+splitter = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=42)
+train_idx, test_idx = next(splitter.split(X, y, groups=pdf["patient_id"]))
+X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+if y_train.nunique() < 2:
+    raise ValueError("Training split contains fewer than two triage classes")
+if set(pdf.iloc[train_idx]["patient_id"]) & set(pdf.iloc[test_idx]["patient_id"]):
+    raise RuntimeError("Patient ID leakage between train and evaluation splits")
 
 numeric_pipe = Pipeline([("imputer", SimpleImputer(strategy="median"))])
 categorical_pipe = Pipeline([
