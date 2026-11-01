@@ -135,7 +135,7 @@ latest = df.withColumn("_rn", F.row_number().over(w)).where("_rn = 1")
 ## 🤖 Step 5: ML Model Training
 
 ### What Was Built
-- RandomForest classifier (160 trees, 87% accuracy)
+- RandomForest classifier (96 trees, patient-held-out evaluation (verify current MLflow metrics))
 - MLflow tracking + UC model registry with Champion alias
 - 600 batch-scored predictions
 
