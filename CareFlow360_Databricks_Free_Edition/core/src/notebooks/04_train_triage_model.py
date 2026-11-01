@@ -188,10 +188,44 @@ ensure_current_patient_coverage(score_pdf, current_patient_count)
 loaded = mlflow.pyfunc.load_model(f"models:/{full_model_name}@Champion")
 score_pdf["predicted_triage_acuity"] = loaded.predict(score_pdf[features]).astype(int)
 score_sdf = spark.createDataFrame(score_pdf)
-(
-    score_sdf.write
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(prediction_table)
-)
-print("Wrote:", prediction_table)
+
+# The deployed triage_predictions Delta table may have appendOnly enabled.
+# Never overwrite or delete existing patient predictions. Insert-only MERGE
+# is idempotent: matched patient_id rows stay put and new patients are added.
+# Spark's Patient 360 materialized view independently applies the latest
+# patient state; historical location changes are tracked by AUTO CDC SCD2.
+from delta.tables import DeltaTable
+
+
+def insert_new_patient_predictions(spark, target_name, source):
+    if not spark.catalog.tableExists(target_name):
+        (source.write.format("delta").mode("errorifexists").saveAsTable(target_name))
+        return "created"
+    target = spark.table(target_name)
+    target_columns = set(target.columns)
+    source_columns = set(source.columns)
+    if target_columns != source_columns:
+        raise RuntimeError(
+            f"Prediction target schema does not match source; "
+            f"target_only={sorted(target_columns - source_columns)}, "
+            f"source_only={sorted(source_columns - target_columns)}"
+        )
+    dup = (
+        target.groupBy("patient_id").count()
+        .where(F.col("count") > 1)
+        .limit(1).count()
+    )
+    if dup:
+        raise RuntimeError("Existing prediction table has duplicate patient IDs")
+    (DeltaTable.forName(spark, target_name).alias("target")
+        .merge(source.alias("new"), "target.patient_id = new.patient_id")
+        .whenNotMatchedInsertAll()
+        .execute())
+    return "insert_only_merge"
+
+
+# Import F only for the duplicate-key verification above.
+from pyspark.sql import functions as F
+write_mode = insert_new_patient_predictions(spark, prediction_table, score_sdf)
+print(f"Prediction table {prediction_table}: {write_mode}; source current patients={len(score_pdf)}")
+print("Existing predictions are preserved; only previously unseen patient IDs are inserted.")
