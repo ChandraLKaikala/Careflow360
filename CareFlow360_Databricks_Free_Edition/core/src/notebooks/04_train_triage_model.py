@@ -36,14 +36,34 @@ experiment_path = widget("experiment_path", f"/Workspace/Users/{spark.sql('SELEC
 model_name = widget("model_name", "triage_acuity_model")
 
 full_model_name = f"{catalog}.{schema}.{model_name}"
-source_table = f"{catalog}.{schema}.gold_triage_training"
+# DAB uses triage_training in the Gold presentation schema; the unified
+# quickstart uses gold_triage_training. Detect the existing table explicitly.
+presentation_source = f"{catalog}.{schema}.triage_training"
+unified_source = f"{catalog}.{schema}.gold_triage_training"
+if spark.catalog.tableExists(presentation_source):
+    source_table = presentation_source
+    prediction_table = f"{catalog}.{schema}.triage_predictions"
+elif spark.catalog.tableExists(unified_source):
+    source_table = unified_source
+    prediction_table = f"{catalog}.{schema}.gold_triage_predictions"
+else:
+    raise RuntimeError(f"Missing training source: {presentation_source} or {unified_source}")
 print("Training source:", source_table)
 print("Registered model:", full_model_name)
 
 # COMMAND ----------
 
 df = spark.table(source_table).dropna(subset=["triage_acuity"])
-pdf = df.toPandas()
+# Avoid unbounded collection into the driver on quota-limited Free Edition.
+max_local_rows = int(widget("max_local_rows", "20000"))
+if max_local_rows < 100 or max_local_rows > 50000:
+    raise ValueError("max_local_rows must be between 100 and 50000")
+pdf = df.limit(max_local_rows + 1).toPandas()
+if len(pdf) > max_local_rows:
+    raise RuntimeError(
+        f"Training set exceeds max_local_rows={max_local_rows}; "
+        "switch to distributed scoring instead of collecting more rows."
+    )
 if len(pdf) < 100:
     raise ValueError(f"Need at least 100 training rows; found {len(pdf)}")
 
@@ -137,6 +157,6 @@ score_sdf = spark.createDataFrame(score_pdf)
     score_sdf.write
     .mode("overwrite")
     .option("overwriteSchema", "true")
-    .saveAsTable(f"{catalog}.{schema}.gold_triage_predictions")
+    .saveAsTable(prediction_table)
 )
-print("Wrote:", f"{catalog}.{schema}.gold_triage_predictions")
+print("Wrote:", prediction_table)
