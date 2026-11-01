@@ -30,10 +30,12 @@ Required test categories:
 5. Presentation views: expected 15 views target the correct pipeline source names, with invalid Unity Catalog identifiers rejected.
 6. Gold pipeline graph: all table dependencies exist; exactly 15 declared datasets including CDC SCD Type 2.
 7. Policy documents: only fabricated synthetic policy chunks with unique chunk IDs; table write and Delta CDF property are attempted.
-8. Model algorithm: synthetic feature schema matches the ML notebook; a local scikit-learn model fits and emits valid 1–5 predictions on held-out examples, and current-patient scoring rejects duplicate IDs, missing encounter keys, and incomplete coverage. This is not MLflow registry testing.
+8. Model algorithm: feature schema and hyperparameters match the notebook; a local scikit-learn model fits and emits valid 1–5 predictions; **GroupShuffleSplit holds out whole patient IDs** with no train/test overlap; a stable-hash, capped sample prevents unbounded pandas collection; logging includes a dummy-classifier baseline and balanced accuracy; only newly unscored current patients are collected. This does not test the Databricks MLflow registry.
 9. Job and extensions: six task keys, unique per-run job ID, downstream task-value references, inserted-row assertions across Bronze/Silver/Gold/predictions, valid dependencies, 02:00 UTC cron, single-run concurrency, no full refresh; optional app/Genie/Search/Serving default to deployed Gold presentation schema; dashboard queries are aggregated.
 
 **Not proven by CI:** actual Databricks SQL parsing and output values for every query; Auto Loader checkpoint behavior; live CDC/SCD2 history; MLflow registration and Champion alias; permissions; production job scheduling; dashboard visual rendering; account compute quota.
+
+**Free Edition ML release checks:** The default historical training sample is capped at 4,000 rows and the Random Forest uses 96 trees with at most two parallel workers. Group-held-out metrics are not comparable with historical random-encounter-split accuracy claims. Inspect the real MLflow run for `train_unique_patients`, `test_unique_patients`, `training_sample_capped`, `balanced_accuracy`, `f1_macro`, and `dummy_f1_macro`. There must be no patient overlap between train and test; `f1_macro` should be compared with its dummy baseline. Existing prediction rows are not rescored by the append-only table contract; the SQL row count should grow by the number of previously unseen current patient IDs.
 
 ## Required live Databricks output test — existing resources only
 
