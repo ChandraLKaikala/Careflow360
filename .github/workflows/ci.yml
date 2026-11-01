@@ -1,0 +1,24 @@
+name: CareFlow360 static checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install lightweight test dependency
+        run: python -m pip install "PyYAML>=6.0,<7"
+      - name: Check source syntax
+        run: python -m compileall -q src
+      - name: Validate bundle contracts
+        run: python -m unittest discover -s tests -v
