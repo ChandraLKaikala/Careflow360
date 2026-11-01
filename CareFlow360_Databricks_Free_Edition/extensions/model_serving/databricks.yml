@@ -9,7 +9,8 @@ variables:
   catalog:
     description: Existing CareFlow360 Unity Catalog catalog.
   schema:
-    default: careflow360_dev
+    description: Deployed Gold schema containing policy chunks and registered models.
+    default: careflow360_gold
   model_name:
     default: triage_acuity_model
   model_version:
