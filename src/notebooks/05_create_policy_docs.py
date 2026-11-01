@@ -21,7 +21,7 @@ def widget(name, default):
 import re
 
 catalog = widget("catalog", spark.sql("SELECT current_catalog() AS c").first()["c"])
-schema = widget("schema", "careflow360")
+schema = widget("schema", "careflow360_gold")
 default_table = "policy_chunks" if schema.endswith("_gold") else "gold_policy_chunks"
 policy_table_name = widget("policy_table_name", default_table)
 for label, ident in (("catalog", catalog), ("schema", schema), ("policy_table_name", policy_table_name)):
