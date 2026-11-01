@@ -7,6 +7,7 @@ import pathlib
 import unittest
 
 import pandas as pd
+import yaml
 from sklearn.model_selection import GroupShuffleSplit
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -59,6 +60,27 @@ class FreeEditionMlTests(unittest.TestCase):
         patients = pd.Series([f"P{i}" for i in range(20)])
         with self.assertRaisesRegex(ValueError, "diversity"):
             get_group_split()(X, y, patients)
+
+    def test_free_edition_job_limits_and_optional_search_examples(self):
+        root_job = yaml.safe_load(JOB.read_text())["resources"]["jobs"]["careflow360_job"]
+        packed = yaml.safe_load((
+            ROOT / "CareFlow360_Databricks_Free_Edition/core/resources/03_jobs.yml"
+        ).read_text())["resources"]["jobs"]["careflow360_job"]
+        for job in (root_job, packed):
+            tasks = {t["task_key"]: t for t in job["tasks"]}
+            ml = tasks["train_triage_model"]["notebook_task"]["base_parameters"]
+            self.assertEqual(ml["max_local_rows"], "4000")
+            self.assertEqual(job["max_concurrent_runs"], 1)
+        helper = (ROOT / "src/notebooks/08_upgrade_existing_daily_job.py").read_text()
+        self.assertIn('str(min(4000, int(old_parameters.get("max_local_rows", "4000"))))', helper)
+        self.assertIn('"split_patient_holdout"', helper)
+        ext = ROOT / "CareFlow360_Databricks_Free_Edition/extensions/ai_search"
+        for file in list((ext / "examples").glob("*.yml")) + [ext / "resources/ai_search.yml"]:
+            cfg = yaml.safe_load(file.read_text())
+            idx = cfg["resources"]["vector_search_indexes"]["careflow_policy_index"]
+            source = idx["delta_sync_index_spec"]["source_table"]
+            self.assertEqual(source,
+                             "${var.catalog}.${var.schema}.${var.table_prefix}policy_chunks")
 
     def test_source_is_bounded_and_scores_only_new_patients(self):
         source = ML.read_text(encoding="utf-8")
