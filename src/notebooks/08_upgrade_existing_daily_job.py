@@ -85,7 +85,8 @@ def make_plan(tasks, paths):
         {"task_key": "train_ml_model"},
     ]
     notebook(validate, "06_validate.py", {
-        "catalog": "workspace", "schema": SCHEMA, "layout": "split",
+        "catalog": "workspace", "schema": SCHEMA, "landing_volume": "landing",
+        "layout": "split",
         "bronze_schema": "careflow360_bronze",
         "silver_schema": "careflow360_silver",
         "gold_schema": GOLD, "max_snapshot_age_hours": "36",
@@ -121,8 +122,13 @@ def checked_notebooks(client, root):
             "split_patient_holdout",
             'new_keys = current_keys.join(existing_ids, "patient_id", "left_anti")',
         ],
-        "05_create_policy_docs.py": ["policy_table_name"],
-        "06_validate.py": ["verify_new_patient_inserts", "expected_new_patients"],
+        "05_create_policy_docs.py": [
+            "policy_table_name", "upsert_policy_chunks", "whenNotMatchedInsertAll"
+        ],
+        "06_validate.py": [
+            "verify_new_patient_inserts", "expected_new_patients",
+            "expected_stream_counts_from_manifest", "landing_volume",
+        ],
     }
     resolved = {}
     for filename, markers in expected.items():
@@ -184,6 +190,14 @@ current = client.jobs.get(job_id=JOB_ID)
 if not current.settings or not current.settings.tasks:
     raise RuntimeError("Existing job settings could not be read")
 schedule_before = check_job(current.settings)
+# Never rewrite task definitions while another scheduled/manual run is active.
+# This is read-only and keeps the updater safe around the 02:00 UTC trigger.
+active_runs = list(client.jobs.list_runs(job_id=JOB_ID, active_only=True, limit=1))
+if active_runs:
+    raise RuntimeError(
+        f"Existing job {JOB_ID} has an active run "
+        f"({active_runs[0].run_id}); retry during a quiet window"
+    )
 if len(current.settings.tasks) not in (4, 6):
     raise RuntimeError("Unexpected task count; review manually")
 paths = checked_notebooks(client, root)
