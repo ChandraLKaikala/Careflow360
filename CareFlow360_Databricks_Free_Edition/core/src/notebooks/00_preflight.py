@@ -16,8 +16,11 @@ current_user = spark.sql("SELECT current_user() AS u").first()["u"]
 
 print(f"Current catalog : {current_catalog}")
 print(f"Current user    : {current_user}")
-print("Recommended schema: careflow360_dev")
-print(f"Recommended volume: /Volumes/{current_catalog}/careflow360_dev/landing")
+print("Split-schema DAB working schema: careflow360")
+print(f"Split-schema DAB landing volume: /Volumes/{current_catalog}/careflow360/landing")
+print("Bronze/Silver/Gold presentation schemas: careflow360_bronze, careflow360_silver, careflow360_gold")
+print("The standalone unified quickstart instead uses careflow360_dev.")
+print("Do not create a second Lakeflow pipeline when upgrading the existing workspace.")
 
 # COMMAND ----------
 
@@ -39,4 +42,4 @@ except Exception as exc:
 
 # MAGIC %md
 # MAGIC ## Next
-# MAGIC Run `core/sql/00_setup.sql` (replace `<CATALOG>` with the value printed above), then run `01_generate_sample_data.py`.
+# MAGIC For the existing split-schema scheduled job, **pull the latest GitHub main and run 08_upgrade_existing_daily_job.py in dry-run mode** before changing any resources. The separate `core/sql/00_setup.sql` is for the unified quickstart only; do not create its `careflow360_dev` schema as a substitute for the already deployed pipeline.
