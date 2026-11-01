@@ -1,6 +1,6 @@
 # AI Search Extension
 
-The split-schema DAB core job creates `policy_chunks` in `careflow360_gold` and enables Delta Change Data Feed. The unified quickstart uses `gold_policy_chunks` in its single schema. The AI Search source table honors `table_prefix` (empty by default; use `gold_` for unified quickstart).
+The split-schema DAB core job creates `policy_chunks` in `careflow360_gold` and enables Delta Change Data Feed. Subsequent daily runs use an idempotent Delta MERGE rather than recreating the table, preserving Delta Sync table identity and CDF continuity. The unified quickstart uses `gold_policy_chunks` in its single schema. The AI Search source table honors `table_prefix` (empty by default; use `gold_` for unified quickstart).
 
 ## Default deployment: semantic + keyword hybrid retrieval
 

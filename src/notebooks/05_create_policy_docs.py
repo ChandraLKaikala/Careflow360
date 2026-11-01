@@ -48,11 +48,31 @@ for doc_id, title, text in policies:
         rows.append((f"{doc_id}-C{i//2+1:02d}", doc_id, title, chunk, "synthetic_demo_policy"))
 
 policy_df = spark.createDataFrame(rows, ["chunk_id", "document_id", "title", "text", "source"])
-(
-    policy_df.write
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(table_name)
-)
+
+# Never overwrite/drop-recreate the table: optional AI Search Delta Sync may
+# depend on its stable table identity and Change Data Feed history.
+def upsert_policy_chunks(spark, target_name, incoming):
+    if not spark.catalog.tableExists(target_name):
+        incoming.write.format("delta").mode("errorifexists").saveAsTable(target_name)
+        return "created"
+    from delta.tables import DeltaTable
+    required = {"chunk_id", "document_id", "title", "text", "source"}
+    if set(spark.table(target_name).columns) != required:
+        raise RuntimeError(f"Existing policy table schema differs: {target_name}")
+    (DeltaTable.forName(spark, target_name).alias("target")
+        .merge(incoming.alias("incoming"), "target.chunk_id = incoming.chunk_id")
+        # Preserve CDF continuity; emit change rows only for modified policies.
+        .whenMatchedUpdateAll(condition=(
+            "NOT (target.document_id <=> incoming.document_id "
+            "AND target.title <=> incoming.title "
+            "AND target.text <=> incoming.text "
+            "AND target.source <=> incoming.source)"
+        ))
+        .whenNotMatchedInsertAll()
+        .execute())
+    return "merged"
+
+
+write_mode = upsert_policy_chunks(spark, table_name, policy_df)
 spark.sql(f"ALTER TABLE {table_name} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)")
-print("Created", table_name, "with", policy_df.count(), "chunks")
+print("Policy table:", table_name, "mode:", write_mode, "source chunks:", policy_df.count())

@@ -5,6 +5,7 @@
 
 # COMMAND ----------
 
+import json
 import re
 from pyspark.sql import functions as F
 
@@ -27,7 +28,8 @@ def safe_identifier(raw):
 
 
 catalog = safe_identifier(widget("catalog", spark.sql("SELECT current_catalog() AS c").first()["c"]))
-schema = safe_identifier(widget("schema", "careflow360_dev"))
+schema = safe_identifier(widget("schema", "careflow360"))
+landing_volume = safe_identifier(widget("landing_volume", "landing"))
 bronze_schema = safe_identifier(widget("bronze_schema", "careflow360_bronze"))
 silver_schema = safe_identifier(widget("silver_schema", "careflow360_silver"))
 gold_schema = safe_identifier(widget("gold_schema", "careflow360_gold"))
@@ -143,6 +145,29 @@ if spark.catalog.tableExists(command):
 
 # COMMAND ----------
 
+def expected_stream_counts_from_manifest(run_id, patient_count, catalog_name, schema_name, volume_name):
+    """Read the immutable generator manifest and verify the exact run contract."""
+    manifest_path = (
+        f"/Volumes/{catalog_name}/{schema_name}/{volume_name}/manifests/{run_id}.json"
+    )
+    manifest = json.loads(dbutils.fs.head(manifest_path, 65536))
+    if manifest.get("run_id") != run_id or manifest.get("num_patients") != patient_count:
+        raise RuntimeError(
+            f"Generator manifest disagrees with job task values for run {run_id}"
+        )
+    counts = manifest.get("rows")
+    names = ("triage", "vitals", "adt", "chief_complaints")
+    if not isinstance(counts, dict):
+        raise RuntimeError("Generator manifest has no stream row counts")
+    for name in names:
+        value = counts.get(name)
+        if type(value) is not int or value < patient_count:
+            raise RuntimeError(f"Generator manifest has invalid {name} count: {value!r}")
+    if counts["triage"] != patient_count or counts["chief_complaints"] != patient_count:
+        raise RuntimeError("Generator manifest is not one triage/complaint per new patient")
+    return {name: counts[name] for name in names}
+
+
 def verify_new_patient_inserts(expected_run_id, expected_new_patients, assets):
     """Fail if this scheduled run did not add one unique row per patient.
 
@@ -152,7 +177,12 @@ def verify_new_patient_inserts(expected_run_id, expected_new_patients, assets):
     """
     prefix = f"P{expected_run_id}-"
     failures = []
-    for layer, name in assets:
+    for asset in assets:
+        if len(asset) == 2:
+            layer, name = asset
+            expected_rows = expected_new_patients
+        else:
+            layer, name, expected_rows = asset
         if not spark.catalog.tableExists(name):
             failures.append(f"{layer}: missing table {name}")
             continue
@@ -168,29 +198,41 @@ def verify_new_patient_inserts(expected_run_id, expected_new_patients, assets):
         rows = int(counts["rows"])
         unique_patients = int(counts["unique_patients"])
         print(f"Run {expected_run_id}: {layer} inserted rows={rows}, distinct_patients={unique_patients}")
-        if unique_patients != expected_new_patients or rows != expected_new_patients:
+        if unique_patients != expected_new_patients or rows != expected_rows:
             failures.append(
-                f"{layer}: expected {expected_new_patients} new patient rows "
+                f"{layer}: expected rows={expected_rows}, patients={expected_new_patients} "
                 f"for run {expected_run_id}, got rows={rows}, distinct={unique_patients}"
             )
     return failures
 
 
 if expected_new_patients is not None:
+    # Check the real generator manifest, not only that a patient_id prefix exists:
+    # a run may ingest all triage rows while losing its ADT/vitals or complaints.
+    expected_rows = expected_stream_counts_from_manifest(
+        expected_run_id, expected_new_patients, catalog, schema, landing_volume
+    )
+    streams = ("triage", "vitals", "adt", "chief_complaints")
     if layout == "split":
         insert_assets = [
-            ("bronze_triage", table(bronze_schema, "triage")),
-            ("silver_triage", triage),
-            ("gold_patient_360", patient),
-            ("gold_triage_predictions", prediction),
+            (f"bronze_{name}", table(bronze_schema, name), expected_rows[name])
+            for name in streams
+        ] + [
+            (f"silver_{name}", table(silver_schema, name), expected_rows[name])
+            for name in streams
         ]
     else:
         insert_assets = [
-            ("bronze_triage", table(schema, "bronze_triage")),
-            ("silver_triage", triage),
-            ("gold_patient_360", patient),
-            ("gold_triage_predictions", prediction),
+            (f"bronze_{name}", table(schema, "bronze_" + name), expected_rows[name])
+            for name in streams
+        ] + [
+            (f"silver_{name}", table(schema, "silver_" + name), expected_rows[name])
+            for name in streams
         ]
+    insert_assets += [
+        ("gold_patient_360", patient, expected_new_patients),
+        ("gold_triage_predictions", prediction, expected_new_patients),
+    ]
     errors.extend(verify_new_patient_inserts(
         expected_run_id, expected_new_patients, insert_assets
     ))
