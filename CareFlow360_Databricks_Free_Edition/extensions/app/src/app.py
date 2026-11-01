@@ -1,103 +1,199 @@
+"""Synthetic hospital operations command center for Databricks Apps.
+
+Only warehouse-backed aggregate results are rendered. No patient-level records
+are fetched; this demo is not clinical decision support.
+"""
+
+from __future__ import annotations
+
+import logging
 import os
-import re
+
 import pandas as pd
 import streamlit as st
 from databricks import sql
 from databricks.sdk.core import Config
 
-cfg = Config()
-warehouse_id = os.environ["DATABRICKS_WAREHOUSE_ID"]
-command_center_table = os.environ["COMMAND_CENTER_TABLE"]
-patient_360_table = os.environ["PATIENT_360_TABLE"]
-alerts_table = os.environ["ALERTS_TABLE"]
-flow_table = os.environ["FLOW_TABLE"]
-
-# Environment-supplied SQL identifiers must be three-part Unity Catalog names.
-safe_table = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){2}$")
-for table_name in (command_center_table, patient_360_table, alerts_table, flow_table):
-    if not safe_table.fullmatch(table_name):
-        raise ValueError("Expected a three-part Unity Catalog table name")
+from app_helpers import AppSettings, build_queries, warehouse_hostname
 
 
-def connection():
-    host = cfg.host.replace("https://", "").replace("http://", "")
-    return sql.connect(
-        server_hostname=host,
+LOG = logging.getLogger(__name__)
+CACHE_TTL_SECONDS = 120
+LOOKBACK_DAYS = 7
+ROW_LIMIT = 100
+
+st.set_page_config(
+    page_title="CareFlow360 | Command Center",
+    page_icon="🏥",
+    layout="wide",
+)
+st.title("CareFlow360")
+st.subheader("Hospital Operations Command Center")
+st.caption(
+    "Synthetic/public portfolio data only · Refreshed by a Databricks job, "
+    "not continuous monitoring · Not clinical decision support"
+)
+
+try:
+    settings = AppSettings.from_env(os.environ)
+    cfg = Config()
+    hostname = warehouse_hostname(cfg.host)
+except Exception:
+    LOG.exception("CareFlow360 App configuration failed")
+    st.error(
+        "App resources or workspace authentication are not configured. "
+        "Check the app bindings and service-principal permissions."
+    )
+    st.stop()
+
+queries = build_queries(settings, lookback_days=LOOKBACK_DAYS, row_limit=ROW_LIMIT)
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, max_entries=32, show_spinner=False)
+def query(statement: str, server_hostname: str, warehouse_id: str) -> pd.DataFrame:
+    """Cache bounded result data, never SQL connections or authentication objects."""
+    with sql.connect(
+        server_hostname=server_hostname,
         http_path=f"/sql/1.0/warehouses/{warehouse_id}",
         credentials_provider=lambda: cfg.authenticate,
-        _use_arrow_native_complex_types=False,
-    )
-
-
-def query(statement: str) -> pd.DataFrame:
-    with connection() as conn:
+    ) as conn:
         with conn.cursor() as cursor:
             cursor.execute(statement)
-            # Row-based SQL results work without optional PyArrow wheels.
-            # This app queries bounded aggregate results (not patient-level data).
-            columns = [col[0] for col in (cursor.description or [])]
+            columns = [column[0] for column in (cursor.description or [])]
             return pd.DataFrame.from_records(cursor.fetchall(), columns=columns)
 
 
-st.set_page_config(page_title="CareFlow360", layout="wide")
-st.title("CareFlow360 — Hospital Operations Command Center")
-st.caption("Synthetic/public portfolio data only. Operational demo — not clinical decision support.")
+def load_section(name: str, statement: str) -> pd.DataFrame | None:
+    try:
+        return query(statement, hostname, settings.warehouse_id)
+    except Exception:
+        LOG.exception("Failed to load dashboard section: %s", name)
+        st.warning(
+            f"{name} is temporarily unavailable. "
+            "Check the SQL warehouse and bound table permissions."
+        )
+        return None
 
-try:
-    kpi = query(f"SELECT * FROM {command_center_table} ORDER BY snapshot_ts DESC LIMIT 1")
-    if not kpi.empty:
-        r = kpi.iloc[0]
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Active patients", int(r.get("active_patients", 0) or 0))
-        c2.metric("ED patients", int(r.get("ed_patients", 0) or 0))
-        c3.metric("ICU patients", int(r.get("icu_patients", 0) or 0))
-        c4.metric("Operational alerts", int(r.get("operational_alert_patients", 0) or 0))
-        snapshot = pd.to_datetime(r.get("snapshot_ts"), errors="coerce", utc=True)
-        if pd.notna(snapshot):
-            hours_old = (pd.Timestamp.now(tz="UTC") - snapshot).total_seconds() / 3600
-            st.caption(f"Last KPI snapshot: {snapshot} ({hours_old:.1f} hours old)")
-            if hours_old > 30:
-                st.warning("KPI snapshot is stale (>30 hours). Do not treat counts as live.")
 
-    st.subheader("Current department census")
-    census = query(f"""
-        SELECT COALESCE(current_department, 'Unknown') AS department,
-               COUNT(*) AS patients
-        FROM {patient_360_table}
-        WHERE is_currently_admitted
-        GROUP BY COALESCE(current_department, 'Unknown')
-        ORDER BY patients DESC
-    """)
-    if not census.empty:
-        st.bar_chart(census.set_index("department"))
+def count_label(value: object) -> str:
+    """Display nullable Spark aggregate counts without throwing on missing values."""
+    if value is None:
+        return "0"
+    try:
+        if pd.isna(value):
+            return "0"
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return "—"
+    return f"{number:,}" if number >= 0 else "—"
+
+
+top_left, top_right = st.columns([4, 1])
+with top_left:
+    st.caption(
+        f"Recent event windows: {LOOKBACK_DAYS} days · "
+        f"Up to {ROW_LIMIT} aggregated groups per section · "
+        f"SQL query cache: {CACHE_TTL_SECONDS} seconds"
+    )
+with top_right:
+    if st.button("Refresh dashboard", use_container_width=True):
+        query.clear()
+        st.caption("Cached query results cleared.")
+
+st.subheader("Current operational snapshot")
+kpi = load_section("Operational snapshot", queries.kpi)
+if kpi is not None and not kpi.empty:
+    latest = kpi.iloc[0]
+    metrics = (
+        ("active_patients", "Active patients"),
+        ("ed_patients", "ED patients"),
+        ("icu_patients", "ICU patients"),
+        ("operational_alert_patients", "Operational alert patients"),
+    )
+    for col, (field, label) in zip(st.columns(4), metrics):
+        with col:
+            st.metric(label, count_label(latest.get(field)))
+
+    snapshot = pd.to_datetime(latest.get("snapshot_ts"), errors="coerce", utc=True)
+    if pd.isna(snapshot):
+        st.warning("The KPI snapshot timestamp is missing or invalid.")
     else:
-        st.info("No active census rows yet.")
+        age_hours = (pd.Timestamp.now(tz="UTC") - snapshot).total_seconds() / 3600
+        st.caption(
+            f"Snapshot updated: {snapshot:%Y-%m-%d %H:%M UTC} "
+            f"({age_hours:.1f} hours ago)"
+        )
+        if age_hours < -1:
+            st.warning("Snapshot timestamp is in the future. Verify workspace clocks.")
+        elif age_hours > 30:
+            st.warning("KPI snapshot is over 30 hours old; values may be stale.")
+elif kpi is not None:
+    st.info("No operational KPI snapshot has been created yet.")
 
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Synthetic alert activity by hour (aggregated)")
-        alerts = query(f"""
-            SELECT DATE_TRUNC('HOUR', event_ts) AS event_hour,
-                   source, COUNT(*) AS alert_records,
-                   SUM(CASE WHEN fall_detected THEN 1 ELSE 0 END) AS fall_records
-            FROM {alerts_table}
-            GROUP BY DATE_TRUNC('HOUR', event_ts), source
-            ORDER BY event_hour DESC
-            LIMIT 100
-        """)
-        st.dataframe(alerts, use_container_width=True, hide_index=True)
+st.subheader("Current department census")
+census = load_section("Department census", queries.census)
+if census is not None:
+    if census.empty:
+        st.info("No currently admitted patients in the synthetic dataset.")
+    else:
+        census = census.copy()
+        census["patients"] = pd.to_numeric(census["patients"], errors="coerce").fillna(0)
+        st.bar_chart(census.set_index("department")["patients"])
 
-    with right:
-        st.subheader("Recent ADT flow")
-        flow = query(f"""
-            SELECT event_hour, event_type, SUM(event_count) AS events
-            FROM {flow_table}
-            GROUP BY event_hour, event_type
-            ORDER BY event_hour DESC
-            LIMIT 100
-        """)
-        st.dataframe(flow, use_container_width=True, hide_index=True)
+left, right = st.columns(2)
+with left:
+    st.subheader("Synthetic operational alerts")
+    st.caption(f"Latest {ROW_LIMIT} hourly/source groups in the past {LOOKBACK_DAYS} days.")
+    alerts = load_section("Alert activity", queries.alerts)
+    if alerts is not None:
+        if alerts.empty:
+            st.info("No synthetic alert records in the selected time window.")
+        else:
+            alerts = alerts.copy()
+            alerts["event_hour"] = pd.to_datetime(
+                alerts["event_hour"], errors="coerce", utc=True
+            )
+            alerts["alert_records"] = pd.to_numeric(
+                alerts["alert_records"], errors="coerce"
+            ).fillna(0)
+            hourly = (
+                alerts.dropna(subset=["event_hour"])
+                .groupby("event_hour")["alert_records"]
+                .sum()
+                .sort_index()
+            )
+            if not hourly.empty:
+                st.line_chart(hourly)
+            with st.expander("View aggregated alert records"):
+                st.dataframe(alerts, use_container_width=True, hide_index=True)
 
-except Exception as exc:
-    st.error("Could not query CareFlow360 tables. Verify the SQL warehouse is running and app resources are bound.")
-    # Detailed exceptions should stay in protected application logs.
+with right:
+    st.subheader("ADT patient flow")
+    st.caption(f"Latest {ROW_LIMIT} hourly/event groups in the past {LOOKBACK_DAYS} days.")
+    flow = load_section("ADT patient flow", queries.flow)
+    if flow is not None:
+        if flow.empty:
+            st.info("No ADT flow records in the selected time window.")
+        else:
+            flow = flow.copy()
+            flow["event_hour"] = pd.to_datetime(
+                flow["event_hour"], errors="coerce", utc=True
+            )
+            flow["events"] = pd.to_numeric(flow["events"], errors="coerce").fillna(0)
+            hourly_flow = flow.dropna(subset=["event_hour"]).pivot_table(
+                index="event_hour",
+                columns="event_type",
+                values="events",
+                aggfunc="sum",
+                fill_value=0,
+            ).sort_index()
+            if not hourly_flow.empty:
+                st.bar_chart(hourly_flow)
+            with st.expander("View aggregated flow records"):
+                st.dataframe(flow, use_container_width=True, hide_index=True)
+
+st.divider()
+st.caption(
+    "Portfolio demonstration only. Trends reflect the latest returned aggregate "
+    "groups, not an exhaustive clinical monitoring feed."
+)
