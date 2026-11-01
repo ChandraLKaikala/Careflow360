@@ -33,6 +33,20 @@ silver_schema = safe_identifier(widget("silver_schema", "careflow360_silver"))
 gold_schema = safe_identifier(widget("gold_schema", "careflow360_gold"))
 layout = widget("layout", "auto").lower()
 max_snapshot_age_hours = float(widget("max_snapshot_age_hours", "36"))
+expected_run_id = widget("expected_run_id", "").strip()
+expected_new_patients_raw = widget("expected_new_patients", "").strip()
+# Both values must arrive together. Missing upstream task values must fail,
+# not quietly disable the insert checks.
+if bool(expected_run_id) != bool(expected_new_patients_raw):
+    raise ValueError("expected_run_id and expected_new_patients must both be supplied")
+if expected_run_id:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", expected_run_id):
+        raise ValueError(f"Invalid expected_run_id: {expected_run_id!r}")
+    if not expected_new_patients_raw.isdigit() or int(expected_new_patients_raw) < 1:
+        raise ValueError("expected_new_patients must be a positive integer")
+    expected_new_patients = int(expected_new_patients_raw)
+else:
+    expected_new_patients = None
 if layout not in {"auto", "split", "unified"}:
     raise ValueError("layout must be auto, split, or unified")
 if max_snapshot_age_hours <= 0:
@@ -126,6 +140,60 @@ if spark.catalog.tableExists(command):
         print(f"Snapshot age: {age:.2f} hours")
         if age > max_snapshot_age_hours:
             errors.append(f"KPI snapshot older than {max_snapshot_age_hours} hours")
+
+# COMMAND ----------
+
+def verify_new_patient_inserts(expected_run_id, expected_new_patients, assets):
+    """Fail if this scheduled run did not add one unique row per patient.
+
+    A new run ID makes patient IDs non-overlapping across job executions.
+    Auto Loader/Gold materialized views then INSERT these as new patients,
+    while SCD2 continues to track changes to existing encounters.
+    """
+    prefix = f"P{expected_run_id}-"
+    failures = []
+    for layer, name in assets:
+        if not spark.catalog.tableExists(name):
+            failures.append(f"{layer}: missing table {name}")
+            continue
+        counts = (
+            spark.table(name)
+            .where(F.col("patient_id").startswith(prefix))
+            .agg(
+                F.count("*").alias("rows"),
+                F.countDistinct("patient_id").alias("unique_patients"),
+            )
+            .first()
+        )
+        rows = int(counts["rows"])
+        unique_patients = int(counts["unique_patients"])
+        print(f"Run {expected_run_id}: {layer} inserted rows={rows}, distinct_patients={unique_patients}")
+        if unique_patients != expected_new_patients or rows != expected_new_patients:
+            failures.append(
+                f"{layer}: expected {expected_new_patients} new patient rows "
+                f"for run {expected_run_id}, got rows={rows}, distinct={unique_patients}"
+            )
+    return failures
+
+
+if expected_new_patients is not None:
+    if layout == "split":
+        insert_assets = [
+            ("bronze_triage", table(bronze_schema, "triage")),
+            ("silver_triage", triage),
+            ("gold_patient_360", patient),
+            ("gold_triage_predictions", prediction),
+        ]
+    else:
+        insert_assets = [
+            ("bronze_triage", table(schema, "bronze_triage")),
+            ("silver_triage", triage),
+            ("gold_patient_360", patient),
+            ("gold_triage_predictions", prediction),
+        ]
+    errors.extend(verify_new_patient_inserts(
+        expected_run_id, expected_new_patients, insert_assets
+    ))
 
 # COMMAND ----------
 
