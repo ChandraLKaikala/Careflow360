@@ -154,6 +154,65 @@ def checked_notebooks(client, root):
     return resolved
 
 
+def pipeline_source_paths(spec, notebook_root):
+    """Fail closed when the live pipeline does not use the pulled Git code."""
+    expected = posixpath.normpath(posixpath.join(notebook_root, "..", "pipelines"))
+    def normalize(path):
+        if path.startswith("/Workspace/"):
+            path = path[len("/Workspace"):]
+        return posixpath.normpath(path)
+    expected = normalize(expected)
+    if not expected.startswith(("/Users/", "/Shared/")):
+        raise RuntimeError(f"Unexpected Git pipeline source root: {expected}")
+    if spec.catalog != "workspace" or (
+        (spec.schema or spec.target) != SCHEMA
+    ):
+        raise RuntimeError("Live Lakeflow pipeline catalog/schema differs from the source bundle")
+    if spec.continuous is True:
+        raise RuntimeError("Live pipeline is continuous, not the expected triggered pipeline")
+    sources = []
+    for library in spec.libraries or []:
+        d = library.as_dict()
+        if "glob" in d:
+            source = d["glob"].get("include")
+        elif "file" in d:
+            source = d["file"].get("path")
+        elif "notebook" in d:
+            source = d["notebook"].get("path")
+        else:
+            raise RuntimeError(f"Unknown pipeline library type: {list(d)}")
+        if not source:
+            raise RuntimeError("Empty Lakeflow pipeline library path")
+        if not source.startswith("/"):
+            if not spec.root_path:
+                raise RuntimeError(f"Relative pipeline library without root_path: {source}")
+            source = posixpath.join(spec.root_path, source)
+        sources.append(normalize(source))
+    if not sources:
+        raise RuntimeError("Live pipeline declares no source libraries")
+    outside = [p for p in sources if not p.startswith(expected + "/")]
+    if outside:
+        raise RuntimeError(
+            "Pipeline libraries still reference a different folder. "
+            f"Expected source files below {expected}; found {outside}. "
+            "Update the EXISTING Lakeflow pipeline's source paths in Databricks "
+            "before applying this job upgrade (do not create a new pipeline)."
+        )
+    if not any(p.startswith(expected + "/") and p.endswith("/**") for p in sources):
+        required = {"01_bronze", "02_silver", "03_gold"}
+        found = {posixpath.basename(p).removesuffix(".py") for p in sources}
+        if not required <= found:
+            raise RuntimeError(f"Live pipeline is missing source files: {sorted(required - found)}")
+    return sources
+
+
+def verify_pipeline_sources(client, notebook_root):
+    pipeline = client.pipelines.get(pipeline_id=PIPELINE_ID)
+    if pipeline.spec is None:
+        raise RuntimeError("Could not inspect the existing Lakeflow pipeline definition")
+    return pipeline_source_paths(pipeline.spec, notebook_root)
+
+
 def save_backup(client, settings):
     owner = client.current_user.me().user_name
     folder = f"/Users/{owner}/careflow360-job-backups"
@@ -201,6 +260,8 @@ if active_runs:
 if len(current.settings.tasks) not in (4, 6):
     raise RuntimeError("Unexpected task count; review manually")
 paths = checked_notebooks(client, root)
+pipeline_paths = verify_pipeline_sources(client, root)
+print("Verified live Lakeflow source libraries:", pipeline_paths)
 plan = make_plan([task.as_dict() for task in current.settings.tasks], paths)
 print("Existing job:", JOB_ID, JOB_NAME)
 print("Preserved cron:", schedule_before)
