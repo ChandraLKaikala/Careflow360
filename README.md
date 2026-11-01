@@ -114,7 +114,7 @@ Portfolio/demo project. All data is synthetic.
 
 The [2026-10-03 changelog](CHANGELOG.md) documents a workspace-level daily job. **The current GitHub bundle does not define a schedule**, so confirm the job's actual schedule and state in Databricks rather than treating a historical job ID as proof of a running deployment.
 
-The bundle's \`generate_sample_events\` task now emits **100 new synthetic patients per invocation** in **2 micro-batches**, with \`reset_events=false\` explicitly set. Each run generates a unique run ID and uses it in patient and encounter identifiers, preventing new runs from overwriting landing data or reusing patient IDs. The pipeline refreshes data, recreates consumer views, updates policy documents, trains a demonstration model, and validates outputs.
+The bundle's `generate_sample_events` task now emits **100 new synthetic patients per invocation** in **2 micro-batches**, with `reset_events=false` explicitly set. Each run generates a unique run ID and uses it in patient and encounter identifiers, preventing new runs from overwriting landing data or reusing patient IDs. The pipeline refreshes data, recreates consumer views, updates policy documents, trains a demonstration model, and validates outputs.
 
 **Important operational distinctions:**
 - Bronze/Silver events and relevant Gold aggregations can increase or change after successful incremental runs. A one-row command-center snapshot does not append daily, and static policy chunks do not grow.
@@ -124,10 +124,10 @@ The bundle's \`generate_sample_events\` task now emits **100 new synthetic patie
 
 ### Validate before deploying
 
-1. Run \`python -m compileall -q src\` and \`python -m unittest discover -s tests -v\` locally (install \`PyYAML\` for the contract tests).
-2. Run \`databricks bundle validate -t dev\` using your configured workspace credentials and current Databricks CLI.
-3. Review the changes with \`databricks bundle plan -t dev\` before deployment.
-4. Deploy to a development target, run \`careflow360_job\`, and inspect the validation job task and data quality metrics.
+1. Run `python -m compileall -q src` and `python -m unittest discover -s tests -v` locally (install `PyYAML` for the contract tests).
+2. Run `databricks bundle validate -t dev` using your configured workspace credentials and current Databricks CLI.
+3. Review the changes with `databricks bundle plan -t dev` before deployment.
+4. Deploy to a development target, run `careflow360_job`, and inspect the validation job task and data quality metrics.
 5. For daily updates, configure or confirm exactly one schedule in the workspace. Be mindful of Free Edition fair-usage limits.
 
 The GitHub Actions workflow performs **static checks only**. It does not execute Databricks Spark jobs or validate clinical or model performance.
