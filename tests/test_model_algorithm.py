@@ -91,7 +91,7 @@ class ModelOutputContractTests(unittest.TestCase):
         self.assertIn('df.join(new_keys, ["patient_id", "encounter_id"], "inner")', source)
         self.assertIn('current_keys.join(existing_ids, "patient_id", "left_anti")', source)
         self.assertIn('spark.table(current_patient_table)', source)
-        self.assertIn('ensure_current_patient_coverage(score_pdf, current_patient_count)', source)
+        self.assertIn('ensure_current_patient_coverage(score_pdf, new_patient_count)', source)
 
     def test_synthetic_model_features_train_and_predict(self):
         fs = FakeFs()
