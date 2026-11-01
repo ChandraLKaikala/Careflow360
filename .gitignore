@@ -1,0 +1,23 @@
+# Python and local tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env
+.env.*
+!.env.example
+
+# Databricks local deployment state and credentials
+.databricks/
+.databrickscfg
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Local data and generated artifacts
+data/
+output/
+artifacts/
+*.parquet
+*.delta
