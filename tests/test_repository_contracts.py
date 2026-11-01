@@ -64,6 +64,12 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn('f"{catalog}.{schema}.triage_predictions"', src)
         self.assertNotIn('f"{catalog}.{schema}.gold_triage_training"', src)
 
+    def test_triage_evaluation_splits_by_patient(self):
+        src = read("src/notebooks/04_train_triage_model.py")
+        self.assertIn("GroupShuffleSplit", src)
+        self.assertIn('groups=pdf["patient_id"]', src)
+        self.assertIn("Patient ID leakage between train and evaluation splits", src)
+
     def test_quarantine_can_observe_invalid_triage_identifiers(self):
         bronze = read("src/pipelines/01_bronze.py")
         silver = read("src/pipelines/02_silver.py")
