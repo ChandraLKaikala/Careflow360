@@ -82,6 +82,13 @@ class FreeEditionMlTests(unittest.TestCase):
             self.assertEqual(source,
                              "${var.catalog}.${var.schema}.${var.table_prefix}policy_chunks")
 
+    def test_streamlit_optional_app_does_not_require_arrow(self):
+        source = (ROOT / "CareFlow360_Databricks_Free_Edition/extensions/app/src/app.py").read_text()
+        self.assertIn("cursor.fetchall()", source)
+        self.assertIn("pd.DataFrame.from_records(", source)
+        self.assertNotIn("fetchall_arrow(", source)
+        self.assertNotIn("SELECT patient_id", source)
+
     def test_source_is_bounded_and_scores_only_new_patients(self):
         source = ML.read_text(encoding="utf-8")
         self.assertEqual(source, ML_MIRROR.read_text(encoding="utf-8"))
