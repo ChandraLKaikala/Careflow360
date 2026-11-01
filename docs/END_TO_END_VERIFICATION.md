@@ -35,6 +35,22 @@ Required test categories:
 
 **Not proven by CI:** actual Databricks SQL parsing and output values for every query; Auto Loader checkpoint behavior; live CDC/SCD2 history; MLflow registration and Champion alias; permissions; production job scheduling; dashboard visual rendering; account compute quota.
 
+**Current-encounter Gold safety:** After the new pipeline code is deployed and refreshed, Patient 360 must never attach a vital timestamp belonging to a different encounter. Run this read-only check; the expected count is zero. Historical patient IDs may legitimately have multiple encounters.
+
+```sql
+SELECT COUNT(*) AS inconsistent_current_vitals
+FROM workspace.careflow360_gold.patient_360 p
+WHERE p.latest_vital_ts IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM workspace.careflow360_silver.vitals v
+    WHERE v.patient_id = p.patient_id
+      AND v.encounter_id = p.encounter_id
+      AND v.event_ts = p.latest_vital_ts
+  );
+```
+
+**Optional CPU benchmark:** `09_compare_free_edition_models.py` runs only when explicitly opened, never as a job task. It tests Logistic Regression, Random Forest and histogram gradient boosting (plus a dummy baseline) on three non-overlapping patient groups. Model selection is by validation macro-F1, then held-out test metrics and CPU time are reported. The daily `Champion` model remains Random Forest until a measured alternative is intentionally reviewed, approved and separately deployed; this experiment cannot guarantee the best model.
+
 **Free Edition ML release checks:** The default historical training sample is capped at 4,000 rows and the Random Forest uses 96 trees with at most two parallel workers. Group-held-out metrics are not comparable with historical random-encounter-split accuracy claims. Inspect the real MLflow run for `train_unique_patients`, `test_unique_patients`, `training_sample_capped`, `balanced_accuracy`, `f1_macro`, and `dummy_f1_macro`. There must be no patient overlap between train and test; `f1_macro` should be compared with its dummy baseline. Existing prediction rows are not rescored by the append-only table contract; the SQL row count should grow by the number of previously unseen current patient IDs.
 
 ## Required live Databricks output test — existing resources only
