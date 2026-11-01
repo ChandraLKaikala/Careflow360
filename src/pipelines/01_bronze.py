@@ -13,7 +13,8 @@ Presentation views in workspace.careflow360_bronze expose these tables to
 downstream consumers with proper access control.
 
 Data Quality:
-  - expect_or_drop on event_id, patient_id, event_ts (non-null)
+  - Retain malformed triage records for Silver quarantine; alert on missing IDs
+  - expect_or_drop on other event streams, enforcing valid identifiers
   - Schema enforced via StructType — no schema drift
 
 Sources:
@@ -115,7 +116,7 @@ def autoload(path, schema):
 # ---------------------------------------------------------------------------
 
 @dp.table(name="bronze_triage", comment="Raw ED triage events from synthetic/Kaggle replay sources.")
-@dp.expect_or_drop("triage_has_ids", "event_id IS NOT NULL AND patient_id IS NOT NULL AND event_ts IS NOT NULL")
+@dp.expect("triage_has_ids", "event_id IS NOT NULL AND patient_id IS NOT NULL AND event_ts IS NOT NULL")
 def bronze_triage():
     return autoload(f"{ROOT}/triage", triage_schema)
 
