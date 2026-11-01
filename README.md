@@ -35,7 +35,7 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 │                  │  - patient_loc.  │  - triage_predictions (T) │
 │                  │                  │  - policy_chunks (T)      │
 ├──────────────────┴──────────────────┴───────────────────────────┤
-│  Pipeline Schema: workspace.careflow360 (17 SDP tables)         │
+│  Schema: 15 SDP datasets + 2 notebook-managed physical tables   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -56,13 +56,13 @@ and it must use only synthetic/public data, never patient PHI.
 
 ### 2. ML Model — Triage Acuity Predictor
 - **Algorithm**: scikit-learn RandomForestClassifier (96 trees, depth 12, at most 2 CPU workers)
-- **Training**: deterministic, bounded sampling of historical synthetic encounters (4,000 rows by default); no unbounded pandas collection as new patients accumulate
-- **Evaluation**: held-out **patient groups**, not random encounters; logs accuracy, balanced accuracy, macro-F1, and majority-class baselines to MLflow
+- **Training**: deterministic, feature-projected sampling capped at 4,000 synthetic encounters; one replay capped at 2,000 patients and 50 batches to respect Free Edition quotas
+- **Evaluation**: held-out **patient groups**, not random encounters; logs accuracy, balanced accuracy, macro-F1, and majority-class baselines to MLflow. A retrain must beat the dummy macro-F1 and not underperform its balanced accuracy before registration/promotion; otherwise the task fails closed.
 - **Features**: Vital signs, demographics, arrival info, GCS, pain score, shock index
 - **Target**: Synthetic acuity classes 1–5. No accuracy percentage is assumed: inspect the current MLflow run's measured held-out metrics.
 - **Registration**: Unity Catalog model under the configured Gold schema, typically `workspace.careflow360_gold.triage_acuity_model` with `Champion` alias
-- **Batch scoring**: scores only previously unseen current patient IDs and inserts them through a non-destructive Delta MERGE. Existing predictions are retained.
-- **Optional model comparison**: [`09_compare_free_edition_models.py`](src/notebooks/09_compare_free_edition_models.py) benchmarks majority-class, Logistic Regression, Random Forest, and histogram gradient boosting on distinct train/validation/test **patient groups**. It is a manual CPU-only experiment (2,000 rows by default), **does not register or promote models**, and is **not run by the daily job**. Compare validation macro-F1, held-out test macro-F1, and fit time before considering a model replacement. A larger model is not inherently better on synthetic tabular data.
+- **Batch scoring**: the already-fitted/evaluated CPU pipeline scores only previously unseen current patient IDs and inserts them via a non-destructive Delta MERGE, avoiding a redundant registry model reload. Existing predictions are retained.
+- **Optional model comparison**: [`09_compare_free_edition_models.py`](src/notebooks/09_compare_free_edition_models.py) benchmarks majority-class, Logistic Regression, Random Forest, Extra Trees, and histogram gradient boosting on distinct train/validation/test **patient groups**. It is a manual CPU-only experiment (2,000 rows by default), **does not register or promote models**, and is **not run by the daily job**. Compare validation macro-F1, held-out test macro-F1, and fit time before considering a model replacement. A larger model is not inherently better on synthetic tabular data.
 
 ### 3. Analytics and optional AI (`07_ai_functions.py`)
 - **Default, Free Edition-safe:** standard Spark SQL KPI queries, a clearly labeled moving-average baseline and aggregate complaint-keyword groups; no foundation-model endpoint required.
@@ -85,6 +85,10 @@ and it must use only synthetic/public data, never patient PHI.
 ### 6. Dashboard — Hospital Command Center
 - Current published dashboard also includes daily job-run gaps, pipeline/data freshness, aggregated synthetic alerts and ML quality. Dashboard revisions are managed inside Databricks, not by this DAB source.
 - Published with embedded credentials
+
+## Engineering review and Free Edition limitations
+
+See [the notebook-by-notebook Free Edition audit](docs/FREE_EDITION_NOTEBOOK_AUDIT.md) for the source/cell inventory, CPU-model rationale, current offline validation coverage, operational caveats, and safe deployment runbook. GitHub CI does **not** validate live Databricks runtime, MLflow registry, streaming checkpoint migrations, or existing job state.
 
 ## DAB Configuration
 - `databricks.yml`: Main bundle config (schema=careflow360)
