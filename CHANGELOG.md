@@ -1,5 +1,16 @@
 # CareFlow360 Changelog
 
+## [2026-11-01] - Free Edition Notebook and ML Audit
+
+- Reviewed all nine canonical Databricks notebooks, packaged notebook cell, mirrored sources, pipeline layers and job wiring; recorded findings in [Free Edition Notebook Audit](docs/FREE_EDITION_NOTEBOOK_AUDIT.md).
+- Capped one synthetic replay at 2,000 patients/50 batches and rejected non-finite pacing parameters without changing scheduled 100-patient defaults.
+- Reduced validation full-table scans to bounded presence checks while preserving exact ten-layer per-run row count validation and adding stricter KPI freshness checks.
+- Bounded driver ML samples to 4,000 projected feature rows and required held-out macro-F1 above the dummy baseline before a retrained model is registered/promoted.
+- Reused the fitted model for incremental predictions; extended the manual CPU comparison with Extra Trees and held-out dummy metrics.
+- Corrected stale Free Edition/Kaggle documentation and removed redundant aggregate sorting.
+- **No Databricks workspace deployment, Spark streaming checkpoint migration, or live MLflow run was performed by these GitHub changes.**
+
+
 ## [2026-11-01] - Optional Command Center Quality and Performance
 
 - Added offline-tested app resource validation (three-part UC identifiers, SQL warehouse ID, HTTPS host).

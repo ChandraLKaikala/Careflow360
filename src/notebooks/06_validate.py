@@ -6,6 +6,7 @@
 # COMMAND ----------
 
 import json
+import math
 import re
 from pyspark.sql import functions as F
 
@@ -51,8 +52,8 @@ else:
     expected_new_patients = None
 if layout not in {"auto", "split", "unified"}:
     raise ValueError("layout must be auto, split, or unified")
-if max_snapshot_age_hours <= 0:
-    raise ValueError("max_snapshot_age_hours must be positive")
+if not math.isfinite(max_snapshot_age_hours) or max_snapshot_age_hours <= 0:
+    raise ValueError("max_snapshot_age_hours must be finite and positive")
 
 
 def table(schema_name, name):
@@ -97,10 +98,12 @@ for name in required:
     if not spark.catalog.tableExists(name):
         errors.append(f"MISSING TABLE: {name}")
         continue
-    row_count = spark.table(name).count()
-    print(f"{name}: {row_count:,} rows")
+    # Check presence with a bounded read instead of COUNT(*) on every
+    # growing pipeline table; exact per-run counts are checked below.
+    has_rows = spark.table(name).limit(1).count() > 0
+    print(f"{name}: {'nonempty' if has_rows else 'empty'}")
     # Quarantine and alerts can legitimately have zero rows.
-    if row_count == 0 and not name.endswith(("triage_quarantine", "live_alerts", "gold_live_alerts")):
+    if not has_rows and not name.endswith(("triage_quarantine", "live_alerts", "gold_live_alerts")):
         errors.append(f"EMPTY REQUIRED TABLE: {name}")
 
 # COMMAND ----------
@@ -135,13 +138,17 @@ if spark.catalog.tableExists(command):
         F.max("snapshot_ts").alias("latest_ts"),
         ((F.unix_timestamp(F.current_timestamp()) - F.unix_timestamp(F.max("snapshot_ts"))) / 3600.0).alias("age_hours"),
     ).first()
-    if freshness["row_count"] == 0 or freshness["latest_ts"] is None:
+    if freshness["row_count"] != 1:
+        errors.append("Command-center KPI must contain exactly one snapshot row")
+    if freshness["latest_ts"] is None:
         errors.append("Missing command-center KPI snapshot")
     else:
         age = float(freshness["age_hours"])
         print(f"Snapshot age: {age:.2f} hours")
         if age > max_snapshot_age_hours:
             errors.append(f"KPI snapshot older than {max_snapshot_age_hours} hours")
+        if age < -1:
+            errors.append("Command-center KPI snapshot is unexpectedly future-dated")
 
 # COMMAND ----------
 

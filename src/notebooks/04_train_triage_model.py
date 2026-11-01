@@ -19,6 +19,7 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, p
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
+import math
 
 # COMMAND ----------
 
@@ -63,14 +64,28 @@ print("Registered model:", full_model_name)
 
 # COMMAND ----------
 
-df = spark.table(source_table).dropna(subset=["triage_acuity", "patient_id", "encounter_id"])
+# Project only the bounded feature contract before collecting data into pandas.
+# Avoid copying unused pipeline metadata to the quota-limited serverless driver.
+numeric = [
+    "age", "systolic_bp", "diastolic_bp", "heart_rate", "respiratory_rate",
+    "temperature_c", "spo2", "gcs_total", "pain_score", "num_prior_visits",
+    "arrival_hour", "shock_index"
+]
+categorical = ["arrival_mode", "arrival_day", "sex"]
+features = numeric + categorical
+
+df = (
+    spark.table(source_table)
+    .select("patient_id", "encounter_id", "triage_acuity", *features)
+    .dropna(subset=["triage_acuity", "patient_id", "encounter_id"])
+)
 # A deterministic, quota-bounded sample prevents the pandas driver from
 # exhausting Free Edition as the number of synthetic encounters grows.
 # xxhash64 balances old and new patient encounters; do not use an unseeded
 # take()/limit() as a substitute for a stable sampling order.
 max_local_rows = int(widget("max_local_rows", "4000"))
-if max_local_rows < 100 or max_local_rows > 20000:
-    raise ValueError("max_local_rows must be between 100 and 20000 in Free Edition")
+if max_local_rows < 100 or max_local_rows > 4000:
+    raise ValueError("max_local_rows must be between 100 and 4000 in Free Edition")
 candidates = (
     df.orderBy(F.xxhash64("patient_id", "encounter_id"))
     .limit(max_local_rows + 1)
@@ -84,14 +99,6 @@ if len(pdf) < 100 or pdf["patient_id"].nunique() < 10:
     )
 print(f"Training examples: {len(pdf)}; sample capped: {training_capped}; "
       f"unique training patients: {pdf['patient_id'].nunique()}")
-
-numeric = [
-    "age", "systolic_bp", "diastolic_bp", "heart_rate", "respiratory_rate",
-    "temperature_c", "spo2", "gcs_total", "pain_score", "num_prior_visits",
-    "arrival_hour", "shock_index"
-]
-categorical = ["arrival_mode", "arrival_day", "sex"]
-features = numeric + categorical
 
 X = pdf[features]
 y = pdf["triage_acuity"].astype(int)
@@ -109,7 +116,7 @@ def split_patient_holdout(features_df, labels, patient_ids):
         raise AssertionError("Patient leakage detected across train/test split")
     train_labels = labels.iloc[train_idx]
     test_labels = labels.iloc[test_idx]
-    if train_labels.nunique() < 2 or len(test_labels) == 0:
+    if train_labels.nunique() < 2 or test_labels.nunique() < 2:
         raise ValueError("Insufficient patient-level diversity after train/test split")
     return (
         features_df.iloc[train_idx], features_df.iloc[test_idx],
@@ -140,6 +147,22 @@ model = RandomForestClassifier(
 )
 pipeline = Pipeline([("preprocessor", preprocessor), ("model", model)])
 
+
+def beats_majority_baseline(results):
+    """Allow promotion only when the patient-held-out demo beats its baseline.
+
+    A failed retrain must leave the existing Champion alias unchanged. This
+    guard is NOT a clinical performance or safety validation.
+    """
+    required = ("f1_macro", "dummy_f1_macro",
+                "balanced_accuracy", "dummy_balanced_accuracy")
+    if not all(math.isfinite(float(results[name])) for name in required):
+        return False
+    return (
+        results["f1_macro"] > results["dummy_f1_macro"]
+        and results["balanced_accuracy"] >= results["dummy_balanced_accuracy"]
+    )
+
 # COMMAND ----------
 
 mlflow.set_experiment(experiment_path)
@@ -156,6 +179,7 @@ with mlflow.start_run(run_name="careflow360-random-forest") as run:
         "accuracy": float(accuracy_score(y_test, pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y_test, pred)),
         "dummy_accuracy": float(accuracy_score(y_test, dummy_pred)),
+        "dummy_balanced_accuracy": float(balanced_accuracy_score(y_test, dummy_pred)),
         "dummy_f1_macro": float(f1_score(y_test, dummy_pred, average="macro", zero_division=0)),
         "f1_macro": float(f1_score(y_test, pred, average="macro", zero_division=0)),
         "precision_macro": float(precision_score(y_test, pred, average="macro", zero_division=0)),
@@ -176,8 +200,14 @@ with mlflow.start_run(run_name="careflow360-random-forest") as run:
         "n_jobs": 2,
         "data_classification": "synthetic_or_public",
         "clinical_use": "prohibited_demo_only",
+        "release_gate": "macro_f1_gt_dummy_and_balanced_accuracy_gte_dummy",
     })
     mlflow.log_metrics(metrics)
+    if not beats_majority_baseline(metrics):
+        raise RuntimeError(
+            "Retrained model did not beat the majority-class holdout baseline. "
+            "Champion was not updated and new predictions were not written."
+        )
     mlflow.sklearn.log_model(
         sk_model=pipeline,
         artifact_path="model",
@@ -241,8 +271,9 @@ if new_patient_count:
         .limit(max_local_rows + 1).toPandas()
     )
     ensure_current_patient_coverage(score_pdf, new_patient_count)
-    loaded = mlflow.pyfunc.load_model(f"models:/{full_model_name}@Champion")
-    score_pdf["predicted_triage_acuity"] = loaded.predict(score_pdf[features]).astype(int)
+    # Score using the fitted, evaluated model already in memory instead of
+    # re-downloading the just-registered Champion model from the registry.
+    score_pdf["predicted_triage_acuity"] = pipeline.predict(score_pdf[features]).astype(int)
     score_sdf = spark.createDataFrame(score_pdf)
 else:
     print("Idempotent scoring: no previously unseen patients; existing predictions preserved.")

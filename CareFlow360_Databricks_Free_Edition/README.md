@@ -1,4 +1,4 @@
-# CareFlow360 — Real-Time Intelligent Hospital Operations Lakehouse
+# CareFlow360 — Incremental Synthetic Hospital Operations Lakehouse
 
 > **Existing workspace caution:** This Free Edition package mirrors the root DAB sources.
 > GitHub changes are not automatically deployed to workspace notebooks/jobs.
@@ -12,7 +12,7 @@ An end-to-end Databricks Free Edition portfolio project that simulates a hospita
 - Unity Catalog schemas, managed volumes, tables, views, lineage and governance
 - Lakeflow Spark Declarative Pipelines using the current `pyspark.pipelines` API
 - Bronze → Silver → Gold medallion architecture
-- Auto Loader streaming ingestion, data-quality expectations and a retained quarantine table
+- Auto Loader JSON ingestion, data-quality expectations and a triage quarantine table (Bronze-null-ID drops cannot appear in that table)
 - AUTO CDC with SCD Type 2 patient-location history
 - Lakeflow Jobs orchestration on serverless compute
 - Declarative Automation Bundles (DABs; formerly Databricks Asset Bundles)
@@ -23,7 +23,7 @@ An end-to-end Databricks Free Edition portfolio project that simulates a hospita
 - Model Serving starter
 - Databricks App starter
 - Lakebase Autoscaling starter
-- Kaggle adapters for Triagegeist and healthcare-monitoring datasets
+- Synthetic-only core generation; optional public-data ideas are documented, not bundled as an executable Kaggle adapter
 
 ## Project scenario
 
@@ -34,7 +34,7 @@ CareFlow360 ingests near-real-time hospital events:
 3. Bedside monitoring events — HR, SpO2, BP, temperature and respiratory rate
 4. Chief-complaint text
 
-Static public datasets are transformed into event streams through a configurable micro-batch event-replay layer (`seconds_between_batches` can be set to a nonzero value for a live demo). This is deliberate: Kaggle data is historical, while the project demonstrates the same incremental architecture used for live feeds such as HL7/FHIR/device streams.
+The core creates **synthetic** micro-batch JSON files using a configurable replay layer (`seconds_between_batches` can be set above zero for a demo). The scheduled job is **daily/triggered**, not a continuously running real-time hospital telemetry feed. Kaggle/public-dataset ETL is not part of the default executable workflow.
 
 ## Important safety and compliance note
 
@@ -71,19 +71,23 @@ careflow360_databricks_free_edition/
 
 1. Import the ZIP into Databricks Workspace.
 2. Run `core/src/notebooks/00_preflight.py`.
-3. Create the schema and landing volume using `core/sql/00_setup.sql` or DAB.
+3. Select **one** setup path: existing split-schema DAB resources or the standalone unified quickstart SQL, as described in `QUICKSTART.md`. Do not accidentally create a second pipeline in a quota-limited workspace.
 4. Run `01_generate_sample_data.py` to seed streaming files.
 5. Deploy/run the Lakeflow pipeline.
 6. Run the training notebook and validation notebook.
 7. Build the AI/BI dashboard using `core/sql/dashboard_queries.sql`.
-8. Add Kaggle data when ready using `02_kaggle_normalize.py`.
+8. Review the [Free Edition notebook audit](../docs/FREE_EDITION_NOTEBOOK_AUDIT.md) and runtime-verification steps before trying the existing scheduled job.
 9. Add the optional Genie, AI Search, Model Serving, App and Lakebase extensions.
+
+## ML and validation
+
+The daily model remains a bounded CPU Random Forest, checked against a patient-held-out majority baseline before promoting its new Champion version. The separate optional notebook also evaluates Logistic Regression, Extra Trees, and histogram gradient boosting without automatically promoting anything. See the [audited rationale](../docs/FREE_EDITION_NOTEBOOK_AUDIT.md) and note that offline repository CI does not deploy or execute the Databricks job.
 
 ## Naming
 
 Defaults used throughout the project:
 
-- schema: `careflow360_dev`
+- schema: `careflow360` for split-schema DAB pipeline, or `careflow360_dev` for standalone unified quickstart
 - volume: `landing`
 - Lakeflow pipeline: `careflow360-hospital-pipeline`
 - Job: `careflow360-end-to-end`

@@ -9,8 +9,6 @@
 
 # COMMAND ----------
 
-from pyspark.sql import functions as F
-
 current_catalog = spark.sql("SELECT current_catalog() AS c").first()["c"]
 current_user = spark.sql("SELECT current_user() AS u").first()["u"]
 
