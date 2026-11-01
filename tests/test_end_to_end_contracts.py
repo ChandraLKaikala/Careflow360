@@ -149,6 +149,28 @@ class GeneratorOutputTests(unittest.TestCase):
             execute_code(GENERATOR, FakeSpark(), FakeDbutils(self.settings("same01"), fs))
         self.assertEqual(before, fs.files)
 
+    def test_partial_run_files_cannot_be_overwritten(self):
+        fs = FakeFs()
+        base = "/Volumes/workspace/careflow360/landing/events/triage"
+        fs.mkdirs(base)
+        saved = f"{base}/batch_partial01_0000.json"
+        fs.put(saved, '{"event_id":"existing"}\\n', False)
+        with self.assertRaisesRegex(ValueError, "Partial run"):
+            execute_code(GENERATOR, FakeSpark(), FakeDbutils(self.settings("partial01"), fs))
+        self.assertEqual(fs.files[saved], '{"event_id":"existing"}\\n')
+
+    def test_larger_microbatch_replay_never_future_dates_events(self):
+        fs = FakeFs()
+        execute_code(GENERATOR, FakeSpark(),
+                     FakeDbutils(self.settings("large01", n="1200", batches="20"), fs))
+        triage = event_rows(fs, "triage")
+        adt = event_rows(fs, "adt")
+        self.assertEqual(len(triage), 1200)
+        self.assertEqual(len({r["patient_id"] for r in triage}), 1200)
+        self.assertTrue(all(datetime.fromisoformat(r["event_ts"].replace("Z", "+00:00"))
+                            <= datetime.now(timezone.utc) for r in adt))
+
+
     def test_destructive_reset_is_rejected(self):
         fs = FakeFs()
         with self.assertRaisesRegex(ValueError, "disabled"):
