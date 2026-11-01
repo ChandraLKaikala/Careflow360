@@ -71,6 +71,29 @@ class BundleContractTests(unittest.TestCase):
         self.assertIn('@dp.expect_or_drop("triage_valid_ids"', silver)
         self.assertIn('name="silver_triage_quarantine"', silver)
 
+    def test_patient_360_joins_are_encounter_scoped(self):
+        source = read("src/pipelines/03_gold.py")
+        self.assertIn(
+            'Window.partitionBy("patient_id", "encounter_id").orderBy',
+            source,
+        )
+        for table in ("vitals", "complaints", "location"):
+            self.assertIn(
+                f'.join({table}, ["patient_id", "encounter_id"], "left")',
+                source,
+            )
+        self.assertIn(
+            'latest.join(admitted, ["patient_id", "encounter_id"], "inner")',
+            source,
+        )
+        self.assertIn('F.col("is_currently_admitted") == F.lit(True)', source)
+
+    def test_validation_rejects_stale_alert_encounters(self):
+        source = read("src/notebooks/06_validate.py")
+        self.assertIn('invalid_alerts =', source)
+        self.assertIn('["patient_id", "encounter_id"], "left"', source)
+        self.assertIn('without an active encounter', source)
+
     def test_validation_targets_presentation_assets(self):
         src = read("src/notebooks/06_validate.py")
         for name in ("bronze_schema", "silver_schema", "gold_schema"):
