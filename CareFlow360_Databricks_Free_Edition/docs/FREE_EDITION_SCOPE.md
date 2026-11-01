@@ -42,9 +42,9 @@ This repository therefore:
 4. Trains a CPU Random Forest on at most 4,000 historical encounters by default; inserts predictions for new patient IDs only.
 5. Provides an optional, **manual** 2,000-row model comparison of Logistic Regression, Random Forest and histogram gradient boosting with a patient-disjoint train/validation/test split; never automatically registers or promotes a candidate.
 6. Joins current Patient 360 vitals, complaints and location by both patient ID and encounter ID, avoiding contamination across revisits.
-4. Keeps AI Search optional and uses one STANDARD endpoint with a triggered HYBRID index by default; the embedding model endpoint is configurable by workspace/region.
-5. Uses scale-to-zero where supported for optional serving resources.
-6. Keeps Lakebase/App/Genie/Serving as separate bundles you can deploy only when needed.
+7. Keeps AI Search optional and uses one STANDARD endpoint with a triggered HYBRID index by default; the embedding model endpoint is configurable by workspace/region.
+8. Uses scale-to-zero where supported for optional serving resources.
+9. Keeps Lakebase/App/Genie/Serving as separate bundles you can deploy only when needed.
 
 ## Not a production compliance environment
 
