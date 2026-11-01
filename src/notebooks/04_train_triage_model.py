@@ -33,9 +33,12 @@ def widget(name, default):
         return str(default)
 
 catalog = widget("catalog", spark.sql("SELECT current_catalog() AS c").first()["c"])
-schema = widget("schema", "careflow360")
+schema = widget("schema", "careflow360_gold")
 experiment_path = widget("experiment_path", f"/Workspace/Users/{spark.sql('SELECT current_user() AS u').first()['u']}/careflow360/triage_experiment")
 model_name = widget("model_name", "triage_acuity_model")
+for label, identifier in (("catalog", catalog), ("schema", schema), ("model_name", model_name)):
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", identifier):
+        raise ValueError(f"Unsafe {label} identifier: {identifier!r}")
 
 full_model_name = f"{catalog}.{schema}.{model_name}"
 # DAB uses triage_training in the Gold presentation schema; the unified

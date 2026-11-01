@@ -63,7 +63,7 @@ Creates business-ready materialized views for dashboards, Genie, ML training, an
 
 ### Key design decisions
 - **Materialized views** — Auto-refreshed by SDP pipeline
-- **Window functions** — `row_number() OVER (PARTITION BY patient_id ORDER BY event_ts DESC)`
+- **Window functions** — latest triage per `patient_id`; latest vitals, complaints and location per `(patient_id, encounter_id)` to prevent mixing data from separate visits. Current live alerts are restricted to the admitted patient's current encounter.
 - **Patient 360 assembly** — Joins latest triage + vitals + complaint + location
 
 ---
@@ -93,6 +93,9 @@ Aggregate checks for required assets, one-row-per-patient grain, acuity ranges a
 The executable notebook uses Free Edition-friendly SQL for KPI aggregates, complaint-keyword grouping and a moving-average baseline; SQL AI functions are optional and are not prerequisites of the scheduled core job.
 
 ---
+
+## 09 · Optional model comparison (manual Free Edition notebook)
+`09_compare_free_edition_models.py` benchmarks majority-class, Logistic Regression, Random Forest and CPU histogram gradient boosting using a deterministic capped sample (2,000 rows by default). Patients are held out **as groups** in train/validation/test, with model selection on validation macro-F1 and a separate final test. It logs only aggregate metrics to MLflow. It does **not** change the production `Champion` alias, deploy endpoints or add work to the scheduled job. Do not claim one model is superior until its actual workspace metrics and training times have been compared.
 
 ## Verification scope
 
