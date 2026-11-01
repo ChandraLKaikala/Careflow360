@@ -14,7 +14,9 @@ SELECT
   operational_alert_patients,
   ROUND(avg_triage_acuity_active, 2) AS avg_triage_acuity_active,
   snapshot_ts
-FROM gold_hospital_command_center;
+FROM gold_hospital_command_center
+ORDER BY snapshot_ts DESC
+LIMIT 1;
 
 -- COMMAND ----------
 -- Patient flow over time
@@ -39,21 +41,16 @@ GROUP BY COALESCE(current_department, 'Unknown')
 ORDER BY patient_count DESC;
 
 -- COMMAND ----------
--- Current synthetic operational alerts
+-- Synthetic operational alert activity: aggregate only, no patient identifiers.
 SELECT
-  patient_id,
-  encounter_id,
-  event_ts,
-  heart_rate,
-  spo2,
-  systolic_bp,
-  diastolic_bp,
-  temperature_c,
-  respiratory_rate,
-  fall_detected
+  DATE_TRUNC('HOUR', event_ts) AS alert_hour,
+  source,
+  COUNT(*) AS alert_records,
+  SUM(CASE WHEN fall_detected THEN 1 ELSE 0 END) AS fall_flag_records
 FROM gold_live_alerts
-ORDER BY event_ts DESC
-LIMIT 200;
+GROUP BY DATE_TRUNC('HOUR', event_ts), source
+ORDER BY alert_hour DESC
+LIMIT 100;
 
 -- COMMAND ----------
 -- Triage mix
