@@ -8,6 +8,8 @@ This page distinguishes **offline source checks** from **actual Databricks works
 - One serverless Lakeflow ETL pipeline; Bronze, Silver, and Gold.
 - Physical outputs in the deployed Gold presentation schema: `triage_predictions`, `policy_chunks`; five Gold presentation views. In the unified quickstart schema the notebook outputs are named `gold_triage_predictions` and `gold_policy_chunks`.
 - Scheduled source DAB job: **02:00 UTC**, `max_concurrent_runs: 1`, triggered refresh (not continuous streaming).
+- **Insert-new-patients contract:** `01_generate_sample_data.py` uses a distinct `{{job.run_id}}` per job execution. Patient 360 is a **Lakeflow materialized view**, not a manually merged Delta table: it gains one row per new `patient_id` when the pipeline refreshes, while still showing the latest state for existing patients.
+- **Predictions contract:** The ML scorer uses insert-only Delta `MERGE` keyed by `patient_id`. This is compatible with the existing append-only predictions table and prevents overwriting old predictions. It intentionally does not revise previously scored patient IDs; enabling matched updates later would require an explicit change to the table's append-only policy.
 - Synthetic-only operational dashboard; no clinical use.
 
 ## GitHub CI / offline acceptance tests
@@ -24,12 +26,12 @@ Required test categories:
 1. Syntax: all Python scripts and individual Databricks Python cells parse; notebook JSON and YAML are valid.
 2. Package parity: root DAB and Free Edition/core mirrored files are identical; the `.ipynb` cell matches the presentation-view script.
 3. Generator outputs: 2 append runs of 50 synthetic patients give 100 distinct triage/patient identifiers, matching chief-complaint counts, admissible acuities, expected ADT types, valid vitals, historical timestamps, and separate manifests.
-4. Generator safety: destructive reset is rejected; duplicate run IDs and interrupted-run files cannot be overwritten; a 1,200-patient/20-batch replay produces no future-dated ADT events.
+4. Generator safety: destructive reset is rejected; event files cannot be overwritten; duplicate run IDs and interrupted-run files cannot be replayed; a 1,200-patient/20-batch replay produces no future-dated ADT events.
 5. Presentation views: expected 15 views target the correct pipeline source names, with invalid Unity Catalog identifiers rejected.
 6. Gold pipeline graph: all table dependencies exist; exactly 15 declared datasets including CDC SCD Type 2.
 7. Policy documents: only fabricated synthetic policy chunks with unique chunk IDs; table write and Delta CDF property are attempted.
 8. Model algorithm: synthetic feature schema matches the ML notebook; a local scikit-learn model fits and emits valid 1–5 predictions on held-out examples, and current-patient scoring rejects duplicate IDs, missing encounter keys, and incomplete coverage. This is not MLflow registry testing.
-9. Job and extensions: six task keys, valid dependency references, 02:00 UTC cron, single-run concurrency, no full refresh; optional app/Genie/Search/Serving default to deployed Gold presentation schema; dashboard query examples are aggregated.
+9. Job and extensions: six task keys, unique per-run job ID, downstream task-value references, inserted-row assertions across Bronze/Silver/Gold/predictions, valid dependencies, 02:00 UTC cron, single-run concurrency, no full refresh; optional app/Genie/Search/Serving default to deployed Gold presentation schema; dashboard queries are aggregated.
 
 **Not proven by CI:** actual Databricks SQL parsing and output values for every query; Auto Loader checkpoint behavior; live CDC/SCD2 history; MLflow registration and Champion alias; permissions; production job scheduling; dashboard visual rendering; account compute quota.
 
@@ -65,9 +67,9 @@ Record these results and the exact UTC query time.
 1. In a test Git folder, run the source `01_generate_sample_data.py` with `num_patients=50`, `num_batches=2`, `reset_events=false`, and a **new unique** `run_id`.
 2. Verify its per-run JSON manifest and the expected Bronze JSON event file counts.
 3. Run **the existing** serverless pipeline with an incremental refresh, **not full refresh**.
-4. Run `03_create_views.py`, `05_create_policy_docs.py`, `04_train_triage_model.py` with `schema=careflow360_gold`, then `06_validate.py` with `layout=split` and a 36-hour freshness threshold.
+4. Run `03_create_views.py`, `05_create_policy_docs.py`, `04_train_triage_model.py` with `schema=careflow360_gold`, then `06_validate.py` with `layout=split`, `max_snapshot_age_hours=36`, `expected_run_id=<exact generated run_id>`, and `expected_new_patients=50`. All four Bronze/Silver/Gold/prediction layers must then contain **50 distinct run-scoped patients** or validation fails.
 5. Rerun the baseline queries and verify new distinct Patient 360 records increased by 50 if all 50 new patients pass pipeline quality checks; if not, inspect quarantines and data-quality metrics.
-6. Check the Gold snapshot timestamp moved forward. Training is encounter-level, but the batch predictions table must contain **one latest-encounter prediction per current Patient 360 patient**; all predicted acuities must be integers 1–5. Preserve historical training examples, not duplicate published current-patient predictions.
+6. Check the Gold snapshot timestamp moved forward. Training remains encounter-level, while the batch predictions table inserts one row **for each new current patient ID** using insert-only `MERGE`, preserving prior predictions. The total predictions count should grow by the same number of new unique patients; all predicted acuities must be integers 1–5.
 
 ### Post-run query acceptance checks
 
