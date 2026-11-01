@@ -23,7 +23,7 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 │                  │  - patient_loc.  │  - triage_predictions (T) │
 │                  │                  │  - policy_chunks (T)      │
 ├──────────────────┴──────────────────┴───────────────────────────┤
-│  Pipeline Schema: workspace.careflow360 (17 SDP tables)         │
+│  Pipeline Schema: workspace.careflow360 (15 SDP tables; 2 more Gold tables created by notebooks)         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -36,10 +36,10 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 
 ### 2. ML Model — Triage Acuity Predictor
 - **Algorithm**: RandomForestClassifier (160 trees, max_depth=12)
-- **Training data**: 600 synthetic patient records
+- **Training data**: Synthetic patient records; the number grows with successful incremental runs
 - **Features**: Vital signs, demographics, arrival info, GCS, pain score, shock index
 - **Target**: Triage acuity level 1-5 (1=critical, 5=non-urgent)
-- **Accuracy**: ~87%
+- **Accuracy**: Run-specific metrics logged to MLflow; no clinical validity is implied
 - **MLflow**: Registered as `workspace.careflow360.triage_acuity_model` with Champion alias
 
 ### 3. AI Functions Notebook (`07_ai_functions.py`)
@@ -53,7 +53,7 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 - Topics: ICU escalation, ED surge, bed assignment, discharge, data quality, synthetic data use
 
 ### 5. Genie Space — Natural Language Q&A
-- **7 gold tables** accessible via natural language
+- **7 gold presentation assets** intended for natural-language access (workspace configuration not versioned here)
 - **8 text instructions** (triage scale, departments, alert thresholds, event types, ML, shock index, time zone, policies)
 - **5 SQL example queries** for common question patterns
 - **10 knowledge snippets** (3 joins, 4 filters, 3 measures)
@@ -63,7 +63,7 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 
 ### 6. Dashboard — Hospital Command Center
 - 10 widgets: KPI counters, department census, triage distribution, patient flow, live alerts, ML predictions
-- Published with embedded credentials
+- Workspace-managed dashboard; its exported definition is not included in this repository
 
 ## DAB Configuration
 - `databricks.yml`: Main bundle config (schema=careflow360)
@@ -90,7 +90,6 @@ Careflow360/
     └── notebooks/
         ├── 00_preflight.py
         ├── 01_generate_sample_data.py
-        ├── 02_kaggle_normalize.py
         ├── 03_create_views.py
         ├── 04_train_triage_model.py
         ├── 05_create_policy_docs.py
@@ -111,29 +110,28 @@ Careflow360/
 ## License
 Portfolio/demo project. All data is synthetic.
 
-## 🔄 Daily Incremental Pipeline (Added 2026-10-03)
+## 🔄 Incremental pipeline and daily scheduling
 
-### Automated Data Growth
-- **Schedule**: Daily at 2:00 AM UTC
-- **Job ID**: 484367296292508
-- **Growth**: +100 patients per day across all layers
+The [2026-10-03 changelog](CHANGELOG.md) documents a workspace-level daily job. **The current GitHub bundle does not define a schedule**, so confirm the job's actual schedule and state in Databricks rather than treating a historical job ID as proof of a running deployment.
 
-### What Happens Daily:
-1. 🎲 Generate 100 new synthetic patients
-2. 📊 Pipeline refresh (bronze → silver → gold)
-3. 🔍 Update presentation views
-4. 🤖 Retrain ML model
+The bundle's \`generate_sample_events\` task now emits **100 new synthetic patients per invocation** in **2 micro-batches**, with \`reset_events=false\` explicitly set. Each run generates a unique run ID and uses it in patient and encounter identifiers, preventing new runs from overwriting landing data or reusing patient IDs. The pipeline refreshes data, recreates consumer views, updates policy documents, trains a demonstration model, and validates outputs.
 
-### Growth Projection:
-| Timeline | Patient Count |
-|----------|--------------|
-| Current  | 600          |
-| Week 1   | 1,300        |
-| Month 1  | 3,600        |
-| Month 3  | 9,600        |
+**Important operational distinctions:**
+- Bronze/Silver events and relevant Gold aggregations can increase or change after successful incremental runs. A one-row command-center snapshot does not append daily, and static policy chunks do not grow.
+- Historical source files created before this update may still use non-unique patient IDs. This fix prevents reuse in *new* runs; it does not rewrite historical Delta tables.
+- This is a synthetic, non-clinical demo. Do not load real patient data or treat triage predictions as medical advice.
+- The pipeline requires serverless capacity and supported features in the target Free Edition workspace. The repository alone cannot verify a live Databricks deployment.
 
-**16 of 17 tables grow automatically** with each run, keeping your dashboard and analytics up-to-date!
+### Validate before deploying
+
+1. Run \`python -m compileall -q src\` and \`python -m unittest discover -s tests -v\` locally (install \`PyYAML\` for the contract tests).
+2. Run \`databricks bundle validate -t dev\` using your configured workspace credentials and current Databricks CLI.
+3. Review the changes with \`databricks bundle plan -t dev\` before deployment.
+4. Deploy to a development target, run \`careflow360_job\`, and inspect the validation job task and data quality metrics.
+5. For daily updates, configure or confirm exactly one schedule in the workspace. Be mindful of Free Edition fair-usage limits.
+
+The GitHub Actions workflow performs **static checks only**. It does not execute Databricks Spark jobs or validate clinical or model performance.
 
 ---
 
-For detailed changes, see [CHANGELOG.md](CHANGELOG.md)
+For earlier project changes, see [CHANGELOG.md](CHANGELOG.md).
