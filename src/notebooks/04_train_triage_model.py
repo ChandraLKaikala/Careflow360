@@ -95,19 +95,28 @@ y = pdf["triage_acuity"].astype(int)
 if y.nunique() < 2:
     raise ValueError("Training target contains fewer than 2 classes")
 
-# Split by *patient*, not by encounter. In the legacy data, one patient has
-# multiple encounters; an encounter-level split leaks patient identity across
-# training and evaluation and overstates generalization performance.
-splitter = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=42)
-train_idx, test_idx = next(splitter.split(X, y, groups=pdf["patient_id"]))
-X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-train_groups = set(pdf.iloc[train_idx]["patient_id"])
-test_groups = set(pdf.iloc[test_idx]["patient_id"])
-if train_groups & test_groups:
-    raise AssertionError("Patient leakage detected across train/test split")
-if y_train.nunique() < 2 or len(y_test) == 0:
-    raise ValueError("Insufficient patient-level diversity after train/test split")
+# Split by *patient*, not encounter: legacy synthetic history has
+# multiple encounters for each patient and a row split inflates metrics.
+def split_patient_holdout(features_df, labels, patient_ids):
+    splitter = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=42)
+    train_idx, test_idx = next(splitter.split(features_df, labels, groups=patient_ids))
+    train_groups = set(patient_ids.iloc[train_idx])
+    test_groups = set(patient_ids.iloc[test_idx])
+    if train_groups & test_groups:
+        raise AssertionError("Patient leakage detected across train/test split")
+    train_labels = labels.iloc[train_idx]
+    test_labels = labels.iloc[test_idx]
+    if train_labels.nunique() < 2 or len(test_labels) == 0:
+        raise ValueError("Insufficient patient-level diversity after train/test split")
+    return (
+        features_df.iloc[train_idx], features_df.iloc[test_idx],
+        train_labels, test_labels, train_groups, test_groups,
+    )
+
+
+X_train, X_test, y_train, y_test, train_groups, test_groups = (
+    split_patient_holdout(X, y, pdf["patient_id"])
+)
 
 numeric_pipe = Pipeline([("imputer", SimpleImputer(strategy="median"))])
 categorical_pipe = Pipeline([
