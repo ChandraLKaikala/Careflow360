@@ -4,6 +4,14 @@ resources:
       name: careflow360-end-to-end
       queue:
         enabled: true
+      max_concurrent_runs: 1
+      # Match the existing workspace job: 02:00 UTC every day.
+      # This explicitly opts in to scheduling even on the dev bundle target.
+      # Bind/compare the existing job before deploying this DAB.
+      schedule:
+        quartz_cron_expression: "0 0 2 * * ?"
+        timezone_id: UTC
+        pause_status: UNPAUSED
       tags:
         project: careflow360
         domain: healthcare
