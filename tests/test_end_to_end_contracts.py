@@ -181,6 +181,77 @@ class ViewOutputTests(unittest.TestCase):
             execute_code(VIEWS, FakeSpark(), bad)
 
 
+class PolicyOutputTests(unittest.TestCase):
+    def test_policy_table_contains_only_synthetic_demo_documents(self):
+        class Writer:
+            def __init__(self, parent):
+                self.parent = parent
+                self.options = {}
+
+            def mode(self, name):
+                self.options["mode"] = name
+                return self
+
+            def option(self, key, value):
+                self.options[key] = value
+                return self
+
+            def saveAsTable(self, name):
+                self.parent.saved_table = name
+
+        class Frame:
+            def __init__(self, rows, columns):
+                self.rows = rows
+                self.columns = columns
+                self.write = Writer(self)
+                self.saved_table = None
+
+            def count(self):
+                return len(self.rows)
+
+        class PolicySpark(FakeSpark):
+            def createDataFrame(self, rows, columns):
+                self.frame = Frame(rows, columns)
+                return self.frame
+
+        spark = PolicySpark()
+        dbutils = FakeDbutils({"catalog": "workspace", "schema": "careflow360_gold"})
+        execute_code(POLICY, spark, dbutils)
+        frame = spark.frame
+        self.assertEqual(frame.saved_table, "workspace.careflow360_gold.gold_policy_chunks")
+        self.assertGreaterEqual(frame.count(), 6)
+        self.assertEqual(len(frame.rows), len({r[0] for r in frame.rows}))
+        self.assertEqual({r[4] for r in frame.rows}, {"synthetic_demo_policy"})
+        self.assertTrue(all(r[3].strip() for r in frame.rows))
+        self.assertTrue(any("delta.enableChangeDataFeed" in query for query in spark.statements))
+
+
+class OptionalExtensionContractTests(unittest.TestCase):
+    def test_app_and_genie_use_actual_gold_views(self):
+        ext = ROOT / "CareFlow360_Databricks_Free_Edition/extensions"
+        for extension in ("genie", "app"):
+            bundle = yaml.safe_load((ext / extension / "databricks.yml").read_text())
+            self.assertEqual(bundle["variables"]["schema"]["default"], "careflow360_gold")
+            self.assertEqual(bundle["variables"]["table_prefix"]["default"], "")
+            path = ext / extension / "resources" / f"{extension}.yml"
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("${var.table_prefix}patient_360", text)
+            self.assertNotIn("${var.schema}.gold_patient_360", text)
+        genie = yaml.safe_load((ext / "genie/resources/genie.yml").read_text())
+        serialized = json.loads(genie["resources"]["genie_spaces"]["careflow_genie"]["serialized_space"])
+        self.assertEqual(len(serialized["data_sources"]["tables"]), 5)
+        instructions = " ".join(
+            " ".join(x["content"]) for x in serialized["instructions"]["text_instructions"]
+        )
+        self.assertIn("never show patient identifiers", instructions)
+
+    def test_dashboard_sql_pack_is_aggregate_only(self):
+        sql = (ROOT / "CareFlow360_Databricks_Free_Edition/core/sql/dashboard_queries.sql").read_text()
+        self.assertIn("ORDER BY snapshot_ts DESC", sql)
+        self.assertNotIn("SELECT patient_id", sql)
+        self.assertIn("GROUP BY DATE_TRUNC('HOUR', event_ts), source", sql)
+
+
 class BundleContractTests(unittest.TestCase):
     def test_dab_dependencies_paths_and_daily_schedule(self):
         cfg = yaml.safe_load((ROOT / "resources/03_jobs.yml").read_text())
