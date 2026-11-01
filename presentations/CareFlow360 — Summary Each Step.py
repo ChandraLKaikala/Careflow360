@@ -109,7 +109,7 @@
 # MAGIC ## 🤖 Step 5: ML Model Training
 # MAGIC
 # MAGIC ### What Was Built
-# MAGIC - RandomForest classifier (160 trees, 87% accuracy)
+# MAGIC - RandomForest classifier (96 trees, patient-held-out evaluation (verify current MLflow metrics))
 # MAGIC - MLflow tracking + UC model registry with Champion alias
 # MAGIC - 600 batch-scored predictions
 # MAGIC
@@ -244,7 +244,7 @@
 # MAGIC
 # MAGIC #### Fix 3: Created Missing MLflow Experiment Directory
 # MAGIC - **Problem**: MLflow experiment path defaults to `.../careflow360/triage_experiment`, but the `careflow360` directory didn't exist in the workspace
-# MAGIC - **Solution**: Created the missing workspace directory `/Users/lokeshchandra.kaikala@gmail.com/careflow360`
+# MAGIC - **Solution**: Created the missing workspace directory `/Users/YOUR_WORKSPACE_USER/careflow360`
 # MAGIC - **Impact**: MLflow can now create the experiment and log training runs
 # MAGIC
 # MAGIC ### Verified Successful Run (Oct 10, 2026)
