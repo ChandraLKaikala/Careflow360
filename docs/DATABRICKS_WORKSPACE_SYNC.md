@@ -44,10 +44,22 @@ After pulling the latest GitHub `main` into your Databricks Git folder, open
 1. First leave the widgets at **`apply_changes=false`** and
    **`verify_with_new_run=false`**. This is a read-only dry run: it checks
    job ID `484367296292508`, the exact existing daily UTC schedule, pipeline
-   ID `dde7c33b-8715-4666-8f6b-ad2af0848966`, existing four task keys, and
-   the contents of all five latest source notebooks. If notebook paths cannot
+   ID `dde7c33b-8715-4666-8f6b-ad2af0848966`, existing four task keys,
+   no other active job run, and the contents of all five latest source notebooks.
+   It also inspects the **existing Lakeflow pipeline source libraries** and
+   refuses an upgrade unless they point to the **three pipeline files inside
+   the freshly pulled Git folder** (`01_bronze.py`, `02_silver.py`,
+   `03_gold.py`) or a matching `src/pipelines/**` glob. It checks the catalog,
+   schema and triggered (noncontinuous) pipeline mode. If notebook paths cannot
    be resolved automatically, supply the absolute workspace folder containing
-   these notebooks via `notebook_root`.
+   the notebooks via `notebook_root`.
+   
+   **If source-library preflight fails:** inspect the existing pipeline's
+   Settings → Source code, and update the library paths to the corresponding
+   `src/pipelines/` files in your pulled Git folder, **in the same existing
+   pipeline ID**. Save the pipeline settings without creating a new pipeline,
+   clearing its checkpoints, or requesting full refresh. Re-run the dry run to
+   confirm the library paths before applying any job changes.
 2. Review the six planned tasks. Switch **`apply_changes=true`** and
    **`verify_with_new_run=true`**, then run all cells again. This writes a
    job-settings backup to the authenticated user's private Databricks workspace
