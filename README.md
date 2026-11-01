@@ -39,10 +39,18 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## Optional SQL Command Center App
+
+The [Databricks Streamlit App](CareFlow360_Databricks_Free_Edition/extensions/app/README.md)
+provides an aggregate-only operations overview with validated Unity Catalog
+resource bindings, a 2-minute result cache, and 7-day/100-group bounded
+alert and ADT flow queries. This extension is **not deployed by GitHub CI**,
+and it must use only synthetic/public data, never patient PHI.
+
 ## Components
 
 ### 1. SDP Pipeline (Spark Declarative Pipelines)
-- **Bronze layer** (`01_bronze.py`): Auto-ingests CSV/JSON from landing volume
+- **Bronze layer** (`01_bronze.py`): Auto-ingests schema-enforced JSON from the landing volume
 - **Silver layer** (`02_silver.py`): Cleanses, deduplicates, computes derived columns (shock_index, pulse_pressure), quarantines bad records
 - **Gold layer** (`03_gold.py`): Aggregates patient 360, command center KPIs, hourly department flow, live alerts, training features
 
@@ -108,7 +116,9 @@ Careflow360/
         ├── 04_train_triage_model.py
         ├── 05_create_policy_docs.py
         ├── 06_validate.py
-        └── 07_ai_functions.py
+        ├── 07_ai_functions.py
+        ├── 08_upgrade_existing_daily_job.py
+        └── 09_compare_free_edition_models.py
 ```
 
 ## Technologies
