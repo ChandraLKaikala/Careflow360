@@ -62,10 +62,20 @@ class FakeFs:
         raise AssertionError("Generated data must never be deleted by a daily run")
 
 
+class FakeTaskValues:
+    def __init__(self):
+        self.values = {}
+
+    def set(self, key, value):
+        self.values[key] = value
+        return True
+
+
 class FakeDbutils:
     def __init__(self, values, fs=None):
         self.widgets = FakeWidgets(values)
         self.fs = fs or FakeFs()
+        self.jobs = types.SimpleNamespace(taskValues=FakeTaskValues())
 
 
 class FakeSparkResult:
