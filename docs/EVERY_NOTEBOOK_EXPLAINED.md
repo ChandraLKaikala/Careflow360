@@ -94,6 +94,9 @@ The executable notebook uses Free Edition-friendly SQL for KPI aggregates, compl
 
 ---
 
+## 09 · Optional model comparison (manual Free Edition notebook)
+`09_compare_free_edition_models.py` benchmarks majority-class, Logistic Regression, Random Forest and CPU histogram gradient boosting using a deterministic capped sample (2,000 rows by default). Patients are held out **as groups** in train/validation/test, with model selection on validation macro-F1 and a separate final test. It logs only aggregate metrics to MLflow. It does **not** change the production `Champion` alias, deploy endpoints or add work to the scheduled job. Do not claim one model is superior until its actual workspace metrics and training times have been compared.
+
 ## Verification scope
 
 - Source pipeline declares **15 materialized/streaming datasets**. The split-schema layout exposes **15 presentation views** and two additional physical Gold tables.
