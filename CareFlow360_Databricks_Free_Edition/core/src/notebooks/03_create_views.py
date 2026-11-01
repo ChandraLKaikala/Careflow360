@@ -1,3 +1,4 @@
+# Databricks notebook source
 """
 CareFlow360 — Create Presentation Views
 =======================================
@@ -15,7 +16,7 @@ Parameters (via widgets):
   gold_schema:      Gold presentation schema (e.g., careflow360_gold)
 """
 
-import json
+import re
 
 # Read widget parameters
 dbutils.widgets.text("catalog", "workspace")
@@ -29,6 +30,11 @@ PIPELINE_SCHEMA = dbutils.widgets.get("pipeline_schema")
 BRONZE_SCHEMA = dbutils.widgets.get("bronze_schema")
 SILVER_SCHEMA = dbutils.widgets.get("silver_schema")
 GOLD_SCHEMA = dbutils.widgets.get("gold_schema")
+
+# Validate identifiers before interpolating them into DDL.
+for value in [CATALOG, PIPELINE_SCHEMA, BRONZE_SCHEMA, SILVER_SCHEMA, GOLD_SCHEMA]:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+        raise ValueError(f"Unsafe Unity Catalog identifier: {value!r}")
 
 # Ensure presentation schemas exist
 for schema, comment in [
