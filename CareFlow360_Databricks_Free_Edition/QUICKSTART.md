@@ -2,14 +2,17 @@
 
 This path works without downloading any external dataset.
 
-## 1. Import this ZIP
+## 1. Bring the repository into Databricks safely
 
-In Databricks Workspace:
+This GitHub repository contains project sources, **not** a prebuilt ZIP archive.
+Use a Databricks **Git folder** linked to this GitHub repository (recommended), then
+check out a reviewed branch or pull the merged `main` branch. Alternatively, create
+and import your own ZIP from the `CareFlow360_Databricks_Free_Edition` directory.
 
-1. Open **Workspace**.
-2. Choose **Import**.
-3. Upload `CareFlow360_Databricks_Free_Edition.zip`.
-4. Databricks automatically expands the ZIP into a workspace folder.
+**Existing CareFlow360 workspace:** Before connecting code to any already-deployed job
+or pipeline, read [the workspace sync runbook](../docs/DATABRICKS_WORKSPACE_SYNC.md).
+Pulling Git files does not automatically change the existing daily job or its tasks.
+Do not create a second pipeline by deploying a fresh, unbound bundle.
 
 ## 2. Discover your catalog
 
@@ -43,6 +46,7 @@ Run:
 
 Set widgets:
 
+- `reset_events`: `false` (safe append; do not delete previous landing files)
 - `catalog`: your catalog
 - `schema`: `careflow360_dev`
 - `volume`: `landing`
