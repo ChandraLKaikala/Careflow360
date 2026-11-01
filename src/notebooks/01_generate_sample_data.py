@@ -148,7 +148,12 @@ def synthetic_triage(age):
 
 # COMMAND ----------
 
-patient_ids = [f"P{run_id}-{i:06d}" for i in range(1, num_patients + 1)]
+def make_patient_ids(batch_run_id, count):
+    """Generate distinct synthetic patient IDs for each ingestion run."""
+    return [f"P{batch_run_id}-{i:06d}" for i in range(1, count + 1)]
+
+
+patient_ids = make_patient_ids(run_id, num_patients)
 per_batch = math.ceil(num_patients / num_batches)
 summary = {"triage": 0, "vitals": 0, "adt": 0, "chief_complaints": 0}
 
