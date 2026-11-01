@@ -28,6 +28,7 @@ from pyspark.sql import functions as F
 # ---------------------------------------------------------------------------
 
 @dp.table(name="silver_triage", comment="Validated and enriched ED triage events.")
+@dp.expect_or_drop("triage_valid_ids", "event_id IS NOT NULL AND patient_id IS NOT NULL AND event_ts IS NOT NULL")
 @dp.expect_or_drop("valid_acuity", "triage_acuity BETWEEN 1 AND 5")
 @dp.expect_or_drop("age_in_demo_range", "age BETWEEN 0 AND 120")
 def silver_triage():
