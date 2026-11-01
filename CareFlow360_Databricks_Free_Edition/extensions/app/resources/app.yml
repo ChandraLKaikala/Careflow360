@@ -12,20 +12,20 @@ resources:
         - name: command-center-table
           uc_securable:
             securable_type: TABLE
-            securable_full_name: ${var.catalog}.${var.schema}.gold_hospital_command_center
+            securable_full_name: ${var.catalog}.${var.schema}.${var.table_prefix}hospital_command_center
             permission: SELECT
         - name: patient-360-table
           uc_securable:
             securable_type: TABLE
-            securable_full_name: ${var.catalog}.${var.schema}.gold_patient_360
+            securable_full_name: ${var.catalog}.${var.schema}.${var.table_prefix}patient_360
             permission: SELECT
         - name: alerts-table
           uc_securable:
             securable_type: TABLE
-            securable_full_name: ${var.catalog}.${var.schema}.gold_live_alerts
+            securable_full_name: ${var.catalog}.${var.schema}.${var.table_prefix}live_alerts
             permission: SELECT
         - name: flow-table
           uc_securable:
             securable_type: TABLE
-            securable_full_name: ${var.catalog}.${var.schema}.gold_department_hourly
+            securable_full_name: ${var.catalog}.${var.schema}.${var.table_prefix}department_hourly
             permission: SELECT
