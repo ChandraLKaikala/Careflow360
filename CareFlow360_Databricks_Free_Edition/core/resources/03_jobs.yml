@@ -15,8 +15,10 @@ resources:
               catalog: ${var.catalog}
               schema: ${resources.schemas.pipeline_schema.name}
               volume: ${resources.volumes.landing_volume.name}
-              num_patients: "1200"
-              num_batches: "20"
+              num_patients: "100"
+              num_batches: "5"
+              reset_events: "false"
+              seconds_between_batches: "0"
 
         - task_key: refresh_lakehouse
           depends_on:
@@ -70,3 +72,4 @@ resources:
               silver_schema: ${resources.schemas.silver_schema.name}
               gold_schema: ${resources.schemas.gold_schema.name}
               pipeline_schema: ${resources.schemas.pipeline_schema.name}
+              max_snapshot_age_hours: "36"
