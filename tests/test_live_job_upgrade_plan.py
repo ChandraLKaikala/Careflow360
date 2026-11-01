@@ -100,6 +100,8 @@ class LiveJobUpgradePlanTests(unittest.TestCase):
                          "{{tasks.generate_daily_patients.values.run_id}}")
         self.assertEqual(vp["expected_new_patients"],
                          "{{tasks.generate_daily_patients.values.num_patients}}")
+        self.assertEqual(vp["schema"], "careflow360")
+        self.assertEqual(vp["landing_volume"], "landing")
         self.assertEqual(planner(plan, paths()), plan, "Rerunning the upgrade must not add tasks")
 
     def test_unknown_tasks_or_different_pipeline_are_rejected(self):
@@ -151,6 +153,9 @@ class LiveJobUpgradePlanTests(unittest.TestCase):
         self.assertNotIn("client.jobs.delete(", source)
         self.assertIn("save_backup(client, current.settings)", source)
         self.assertIn("checked_notebooks(client, root)", source)
+        self.assertIn("client.jobs.list_runs(job_id=JOB_ID, active_only=True, limit=1)", source)
+        self.assertIn('"expected_stream_counts_from_manifest"', source)
+        self.assertIn('"upsert_policy_chunks"', source)
         self.assertIn("after_count - before_count != 100", source)
 
 
