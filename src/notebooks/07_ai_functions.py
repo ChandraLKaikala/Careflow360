@@ -47,7 +47,8 @@ hourly_volume = (
     .groupBy("event_hour")
     .agg(F.sum("event_count").alias("admissions"))
     .select(F.col("event_hour").alias("ts"), "admissions")
-    .orderBy("ts")
+    # Avoid a global sort before the temporary view: downstream display
+    # explicitly orders its bounded results; SQL aggregations need no sort.
 )
 if hourly_volume.limit(1).count() == 0:
     raise RuntimeError("No hourly admission records available. Run the pipeline first.")
