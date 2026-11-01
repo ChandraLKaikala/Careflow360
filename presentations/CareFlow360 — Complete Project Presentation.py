@@ -5,7 +5,7 @@
 # MAGIC ## Complete Project Presentation
 # MAGIC
 # MAGIC **Project**: CareFlow360 Hospital Analytics
-# MAGIC **Owner**: lokeshchandra.kaikala@gmail.com
+# MAGIC **Owner**: YOUR_WORKSPACE_USER
 # MAGIC **Workspace**: dbc-11dcf304-ed66.cloud.databricks.com
 # MAGIC **Edition**: Databricks Free Edition
 # MAGIC **Last Updated**: October 10, 2026
@@ -46,7 +46,7 @@
 # MAGIC | --- | --- | --- |
 # MAGIC | **SDP Pipeline** | ✅ Operational | 17 tables (4 Bronze, 6 Silver, 7 Gold), serverless + photon |
 # MAGIC | **Daily Job** | ✅ Operational | 4-task workflow: generate data → refresh pipeline → create views → train ML |
-# MAGIC | **ML Model** | ✅ Trained | RandomForest triage classifier, ~87% accuracy, UC-registered with Champion alias |
+# MAGIC | **ML Model** | ✅ Trained | RandomForest triage classifier, measured patient-held-out metrics (inspect MLflow), UC-registered with Champion alias |
 # MAGIC | **AI/BI Dashboard** | ✅ Published | 10 verified widgets across 6 SQL datasets |
 # MAGIC | **Genie Space** | ✅ Production-ready | 8/8 benchmark questions passed |
 # MAGIC | **UC Governance** | ✅ Applied | Tags, comments, Delta properties, 3-schema separation |
@@ -251,7 +251,7 @@
 # MAGIC | **Status** | UNPAUSED (active) |
 # MAGIC | **Max concurrent runs** | 1 |
 # MAGIC | **Queue** | Enabled |
-# MAGIC | **Run as** | lokeshchandra.kaikala@gmail.com (owner) |
+# MAGIC | **Run as** | YOUR_WORKSPACE_USER (owner) |
 # MAGIC | **On failure** | Email notification to owner |
 # MAGIC
 # MAGIC ### Task Chain (Sequential)
@@ -314,14 +314,14 @@
 # MAGIC
 # MAGIC | Property | Value |
 # MAGIC | --- | --- |
-# MAGIC | **Algorithm** | RandomForestClassifier (160 trees, max_depth=12) |
+# MAGIC | **Algorithm** | RandomForestClassifier (96 trees, max_depth=12) |
 # MAGIC | **Features** | 12 numeric (age, vitals, shock_index, etc.) + 3 categorical (arrival_mode, day, sex) |
 # MAGIC | **Target** | `triage_acuity` (ESI 1-5, 5-class classification) |
-# MAGIC | **Accuracy** | ~87% |
+# MAGIC | **Accuracy** | Determined from current patient-held-out MLflow run; do not assume a historical score |
 # MAGIC | **Training data** | `workspace.careflow360.gold_triage_training` (~700 rows, growing daily) |
 # MAGIC | **Model registry** | UC-registered as `workspace.careflow360.triage_acuity_model` with `Champion` alias |
 # MAGIC | **Predictions** | Written to `workspace.careflow360.gold_triage_predictions` (batch scoring) |
-# MAGIC | **MLflow experiment** | `/Workspace/Users/lokeshchandra.kaikala@gmail.com/careflow360/triage_experiment` |
+# MAGIC | **MLflow experiment** | `/Workspace/Users/YOUR_WORKSPACE_USER/careflow360/triage_experiment` |
 # MAGIC
 # MAGIC ### ML Pipeline (scikit-learn)
 # MAGIC
@@ -489,7 +489,7 @@
 # MAGIC | **Delta properties** | `delta.enableDeletionVectors=true`, `delta.autoOptimize.managed=true` |
 # MAGIC | **Volume** | `workspace.careflow360.landing` — governed UC volume for file ingestion |
 # MAGIC | **Model registry** | UC-registered model `workspace.careflow360.triage_acuity_model` |
-# MAGIC | **Run-as identity** | Job runs as owner (lokeshchandra.kaikala@gmail.com) |
+# MAGIC | **Run-as identity** | Job runs as owner (YOUR_WORKSPACE_USER) |
 # MAGIC
 # MAGIC ### 3-Schema Separation Pattern
 # MAGIC
@@ -574,7 +574,7 @@
 # MAGIC | **Task affected** | `train_ml_model` |
 # MAGIC | **Error** | `RestException: NOT_FOUND: Parent directory does not exist: /Users/.../careflow360` |
 # MAGIC | **Root cause** | The notebook's `experiment_path` defaults to `/Workspace/Users/.../careflow360/triage_experiment`. The `careflow360` directory didn't exist in the workspace, so MLflow couldn't create the experiment. |
-# MAGIC | **Fix** | Created the missing workspace directory `/Users/lokeshchandra.kaikala@gmail.com/careflow360` |
+# MAGIC | **Fix** | Created the missing workspace directory `/Users/YOUR_WORKSPACE_USER/careflow360` |
 # MAGIC | **Impact** | MLflow can now create the experiment and log the training run |
 # MAGIC
 # MAGIC ### Verification
@@ -605,7 +605,7 @@
 # MAGIC | **Silver Tables** | ✅ 6 tables | Cleansed, enriched, SCD2, quarantine pattern |
 # MAGIC | **Gold Tables** | ✅ 7 tables | 5 materialized views + 2 physical (predictions + policy chunks) |
 # MAGIC | **Presentation Views** | ✅ 15 views | 4 bronze + 6 silver + 5 gold views across 3 schemas |
-# MAGIC | **ML Model** | ✅ Trained | RandomForest, ~87% accuracy, UC Champion alias |
+# MAGIC | **ML Model** | ✅ Trained | RandomForest, measured patient-held-out metrics (inspect MLflow), UC Champion alias |
 # MAGIC | **MLflow Experiment** | ✅ Created | `/Workspace/Users/.../careflow360/triage_experiment` |
 # MAGIC | **AI/BI Dashboard** | ✅ Published | 10 widgets, 6 datasets, all verified |
 # MAGIC | **Genie Space** | ✅ Production-ready | 8/8 benchmarks passed |
