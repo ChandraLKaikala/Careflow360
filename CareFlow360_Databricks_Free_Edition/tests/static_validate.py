@@ -78,7 +78,7 @@ def check_incremental_contract():
         errors.append("Generator must default to non-destructive replay")
     if 'f"P{run_id}-{i:06d}"' not in script:
         errors.append("Patient IDs must be unique per replay run")
-    if 'f"{base}/manifests/{run_id}.json"' not in script:
+    if 'dbutils.fs.put(f"{manifest_dir}/{run_id}.json"' not in script:
         errors.append("A per-run replay manifest must be preserved")
     job = (REPO / "resources/03_jobs.yml").read_text(encoding="utf-8")
     if 'reset_events: "false"' not in job or 'num_patients: "100"' not in job:
