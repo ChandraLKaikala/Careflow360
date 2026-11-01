@@ -15,9 +15,19 @@ def widget(name, default):
     except Exception:
         return str(default)
 
+# The DAB Gold presentation layout writes `policy_chunks`.
+# The older one-schema quickstart writes `gold_policy_chunks`.
+# The job passes policy_table_name explicitly to avoid changing this on deploy.
+import re
+
 catalog = widget("catalog", spark.sql("SELECT current_catalog() AS c").first()["c"])
 schema = widget("schema", "careflow360")
-table_name = f"{catalog}.{schema}.gold_policy_chunks"
+default_table = "policy_chunks" if schema.endswith("_gold") else "gold_policy_chunks"
+policy_table_name = widget("policy_table_name", default_table)
+for label, ident in (("catalog", catalog), ("schema", schema), ("policy_table_name", policy_table_name)):
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ident):
+        raise ValueError(f"Unsafe {label} identifier: {ident!r}")
+table_name = f"{catalog}.{schema}.{policy_table_name}"
 
 # COMMAND ----------
 
