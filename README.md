@@ -1,5 +1,13 @@
 # CareFlow360 — Hospital Operations Analytics Platform
 
+> **Deployment notice (November 2026):** The source-code repair branch contains safer append-only replay,
+> split-schema ML references, richer validation, and static CI. These are **GitHub changes, not yet deployed**
+> to the existing Databricks job. The existing 02:00 UTC job has missing historical run dates.
+> Before deploying, follow [the workspace sync and validation runbook](docs/DATABRICKS_WORKSPACE_SYNC.md);
+> an unbound DAB deploy can create duplicate jobs/pipelines in quota-limited Free Edition.
+> Keep this demo synthetic/public only — never load real patient PHI.
+
+
 ## Overview
 CareFlow360 is a **synthetic hospital operations analytics platform** built on Databricks, demonstrating an industry-ready medallion lakehouse architecture with ML predictions, AI functions, Genie natural-language Q&A, and a real-time command center dashboard.
 
@@ -62,7 +70,7 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 - **10 starter questions** + **8 benchmark questions** (8/8 passing)
 
 ### 6. Dashboard — Hospital Command Center
-- 10 widgets: KPI counters, department census, triage distribution, patient flow, live alerts, ML predictions
+- Current published dashboard also includes daily job-run gaps, pipeline/data freshness, aggregated synthetic alerts and ML quality. Dashboard revisions are managed inside Databricks, not by this DAB source.
 - Published with embedded credentials
 
 ## DAB Configuration
