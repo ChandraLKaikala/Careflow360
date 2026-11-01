@@ -10,7 +10,7 @@ import unittest
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.dummy import DummyClassifier
-from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import balanced_accuracy_score, f1_score
@@ -104,6 +104,7 @@ class FreeEditionModelComparisonTests(unittest.TestCase):
                 "StandardScaler": StandardScaler,
                 "LogisticRegression": LogisticRegression,
                 "RandomForestClassifier": RandomForestClassifier,
+                "ExtraTreesClassifier": ExtraTreesClassifier,
                 "HistGradientBoostingClassifier": HistGradientBoostingClassifier,
                 "f1_score": f1_score,
                 "balanced_accuracy_score": balanced_accuracy_score,
@@ -148,11 +149,13 @@ class FreeEditionModelComparisonTests(unittest.TestCase):
         y = pd.Series([i % 5 + 1 for i in range(120)])
         candidates = self.namespace["candidate_models"]()
         self.assertEqual(set(candidates), {
-            "logistic_regression", "random_forest", "hist_gradient_boosting"
+            "logistic_regression", "random_forest", "extra_trees", "hist_gradient_boosting"
         })
         self.assertEqual(candidates["random_forest"].named_steps["model"].n_estimators, 96)
         self.assertEqual(candidates["random_forest"].named_steps["model"].n_jobs, 2)
         self.assertEqual(candidates["hist_gradient_boosting"].named_steps["model"].max_iter, 100)
+        self.assertEqual(candidates["extra_trees"].named_steps["model"].n_estimators, 80)
+        self.assertEqual(candidates["extra_trees"].named_steps["model"].n_jobs, 2)
         for model in candidates.values():
             model.fit(X, y)
             prediction = model.predict(X.iloc[:10])
