@@ -15,8 +15,9 @@ resources:
               catalog: ${var.catalog}
               schema: ${resources.schemas.pipeline_schema.name}
               volume: ${resources.volumes.landing_volume.name}
-              num_patients: "1200"
-              num_batches: "20"
+              num_patients: "100"
+              num_batches: "2"
+              reset_events: "false"
 
         - task_key: refresh_lakehouse
           depends_on:
