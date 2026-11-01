@@ -84,8 +84,8 @@ df = (
 # xxhash64 balances old and new patient encounters; do not use an unseeded
 # take()/limit() as a substitute for a stable sampling order.
 max_local_rows = int(widget("max_local_rows", "4000"))
-if max_local_rows < 100 or max_local_rows > 20000:
-    raise ValueError("max_local_rows must be between 100 and 20000 in Free Edition")
+if max_local_rows < 100 or max_local_rows > 4000:
+    raise ValueError("max_local_rows must be between 100 and 4000 in Free Edition")
 candidates = (
     df.orderBy(F.xxhash64("patient_id", "encounter_id"))
     .limit(max_local_rows + 1)
@@ -116,7 +116,7 @@ def split_patient_holdout(features_df, labels, patient_ids):
         raise AssertionError("Patient leakage detected across train/test split")
     train_labels = labels.iloc[train_idx]
     test_labels = labels.iloc[test_idx]
-    if train_labels.nunique() < 2 or len(test_labels) == 0:
+    if train_labels.nunique() < 2 or test_labels.nunique() < 2:
         raise ValueError("Insufficient patient-level diversity after train/test split")
     return (
         features_df.iloc[train_idx], features_df.iloc[test_idx],
