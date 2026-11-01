@@ -300,6 +300,14 @@ manifest = {
     "rows": summary,
     "disclaimer": "Synthetic portfolio data. Not clinically validated.",
 }
+# Preserve an immutable-name manifest for every synthetic batch run.
+dbutils.fs.mkdirs(f"{base}/manifests")
+dbutils.fs.put(
+    f"{base}/manifests/source_manifest_{run_id}.json",
+    json.dumps(manifest, indent=2),
+    True,
+)
+# Maintain a latest-run pointer for quick inspection.
 dbutils.fs.put(f"{base}/source_manifest.json", json.dumps(manifest, indent=2), True)
 
 print(json.dumps(manifest, indent=2))
