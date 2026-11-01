@@ -14,7 +14,7 @@ resources:
       index_type: DELTA_SYNC
       index_subtype: FULL_TEXT
       delta_sync_index_spec:
-        source_table: ${var.catalog}.${var.schema}.gold_policy_chunks
+        source_table: ${var.catalog}.${var.schema}.${var.table_prefix}policy_chunks
         pipeline_type: TRIGGERED
         columns_to_sync:
           - chunk_id

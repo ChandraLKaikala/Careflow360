@@ -33,7 +33,10 @@ def query(statement: str) -> pd.DataFrame:
     with connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(statement)
-            return cursor.fetchall_arrow().to_pandas()
+            # Row-based SQL results work without optional PyArrow wheels.
+            # This app queries bounded aggregate results (not patient-level data).
+            columns = [col[0] for col in (cursor.description or [])]
+            return pd.DataFrame.from_records(cursor.fetchall(), columns=columns)
 
 
 st.set_page_config(page_title="CareFlow360", layout="wide")

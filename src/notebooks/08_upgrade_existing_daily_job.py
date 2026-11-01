@@ -65,7 +65,7 @@ def make_plan(tasks, paths):
     model_parameters = {
         "catalog": "workspace", "schema": GOLD,
         "model_name": old_parameters.get("model_name", "triage_acuity_model"),
-        "max_local_rows": old_parameters.get("max_local_rows", "20000"),
+        "max_local_rows": str(min(4000, int(old_parameters.get("max_local_rows", "4000")))),
     }
     if old_parameters.get("experiment_path"):
         model_parameters["experiment_path"] = old_parameters["experiment_path"]
@@ -115,7 +115,12 @@ def checked_notebooks(client, root):
             "dbutils.fs.put(path, payload, False)",
         ],
         "03_create_views.py": ["CREATE OR REPLACE VIEW"],
-        "04_train_triage_model.py": ["insert_new_patient_predictions", "whenNotMatchedInsertAll"],
+        "04_train_triage_model.py": [
+            "insert_new_patient_predictions",
+            "whenNotMatchedInsertAll",
+            "split_patient_holdout",
+            'new_keys = current_keys.join(existing_ids, "patient_id", "left_anti")',
+        ],
         "05_create_policy_docs.py": ["policy_table_name"],
         "06_validate.py": ["verify_new_patient_inserts", "expected_new_patients"],
     }

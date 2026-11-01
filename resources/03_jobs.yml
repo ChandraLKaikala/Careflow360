@@ -71,6 +71,8 @@ resources:
               pipeline_schema: ${resources.schemas.pipeline_schema.name}
               experiment_path: ${resources.experiments.triage_experiment.name}
               model_name: ${var.model_name}
+              # Stable bounded sample; avoid growing pandas memory without limit.
+              max_local_rows: "4000"
 
         - task_key: validate_project
           depends_on:

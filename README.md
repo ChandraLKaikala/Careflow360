@@ -13,7 +13,7 @@
 
 
 ## Overview
-CareFlow360 is a **synthetic hospital operations analytics platform** built on Databricks, demonstrating an industry-ready medallion lakehouse architecture with ML predictions, AI functions, Genie natural-language Q&A, and a real-time command center dashboard.
+CareFlow360 is a **synthetic hospital operations analytics platform** built on Databricks, demonstrating a medallion lakehouse architecture with ML predictions, optional AI/Genie analytics, and a **daily refreshed** command center dashboard. The core job is triggered, not a continuously running real-time hospital telemetry system.
 
 > **⚠️ Disclaimer:** All data is synthetic. This is a portfolio/demo project, NOT a clinical system.
 
@@ -47,18 +47,18 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 - **Gold layer** (`03_gold.py`): Aggregates patient 360, command center KPIs, hourly department flow, live alerts, training features
 
 ### 2. ML Model — Triage Acuity Predictor
-- **Algorithm**: RandomForestClassifier (160 trees, max_depth=12)
-- **Training data**: 600 synthetic patient records
+- **Algorithm**: scikit-learn RandomForestClassifier (96 trees, depth 12, at most 2 CPU workers)
+- **Training**: deterministic, bounded sampling of historical synthetic encounters (4,000 rows by default); no unbounded pandas collection as new patients accumulate
+- **Evaluation**: held-out **patient groups**, not random encounters; logs accuracy, balanced accuracy, macro-F1, and majority-class baselines to MLflow
 - **Features**: Vital signs, demographics, arrival info, GCS, pain score, shock index
-- **Target**: Triage acuity level 1-5 (1=critical, 5=non-urgent)
-- **Accuracy**: ~87%
-- **MLflow**: Registered as `workspace.careflow360.triage_acuity_model` with Champion alias
+- **Target**: Synthetic acuity classes 1–5. No accuracy percentage is assumed: inspect the current MLflow run's measured held-out metrics.
+- **Registration**: Unity Catalog model under the configured Gold schema, typically `workspace.careflow360_gold.triage_acuity_model` with `Champion` alias
+- **Batch scoring**: scores only previously unseen current patient IDs and inserts them through a non-destructive Delta MERGE. Existing predictions are retained.
 
-### 3. AI Functions Notebook (`07_ai_functions.py`)
-- `ai_classify`: Classifies chief complaints into clinical categories (Cardiac, Respiratory, GI, Neuro, Trauma)
-- `ai_extract`: Extracts body_part, symptom, severity from complaint text (v2.1)
-- `ai_forecast`: Predicts patient admission volume (requires preview enablement)
-- Direct SQL: Natural-language queries over hospital data
+### 3. Analytics and optional AI (`07_ai_functions.py`)
+- **Default, Free Edition-safe:** standard Spark SQL KPI queries, a clearly labeled moving-average baseline and aggregate complaint-keyword groups; no foundation-model endpoint required.
+- **Optional:** AI_CLASSIFY, AI_EXTRACT, AI_FORECAST and AI_QUERY may be explored in a separate notebook only when workspace features and model access permit. Their results are **not** required by the daily core job.
+- These are synthetic portfolio demonstrations, not clinical classifiers or validated patient forecasts.
 
 ### 4. RAG Policy Documents
 - 6 synthetic hospital policy documents chunked for semantic search
