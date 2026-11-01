@@ -6,6 +6,7 @@
 # COMMAND ----------
 
 import json
+import math
 import re
 from pyspark.sql import functions as F
 
@@ -51,8 +52,8 @@ else:
     expected_new_patients = None
 if layout not in {"auto", "split", "unified"}:
     raise ValueError("layout must be auto, split, or unified")
-if max_snapshot_age_hours <= 0:
-    raise ValueError("max_snapshot_age_hours must be positive")
+if not math.isfinite(max_snapshot_age_hours) or max_snapshot_age_hours <= 0:
+    raise ValueError("max_snapshot_age_hours must be finite and positive")
 
 
 def table(schema_name, name):
