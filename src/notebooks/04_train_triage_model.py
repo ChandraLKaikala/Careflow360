@@ -10,11 +10,13 @@ import mlflow
 import mlflow.sklearn
 import pandas as pd
 from mlflow.tracking import MlflowClient
+from pyspark.sql import functions as F
 from sklearn.compose import ColumnTransformer
+from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, precision_score, recall_score
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
@@ -58,19 +60,27 @@ print("Registered model:", full_model_name)
 
 # COMMAND ----------
 
-df = spark.table(source_table).dropna(subset=["triage_acuity"])
-# Avoid unbounded collection into the driver on quota-limited Free Edition.
-max_local_rows = int(widget("max_local_rows", "20000"))
-if max_local_rows < 100 or max_local_rows > 50000:
-    raise ValueError("max_local_rows must be between 100 and 50000")
-pdf = df.limit(max_local_rows + 1).toPandas()
-if len(pdf) > max_local_rows:
-    raise RuntimeError(
-        f"Training set exceeds max_local_rows={max_local_rows}; "
-        "switch to distributed scoring instead of collecting more rows."
+df = spark.table(source_table).dropna(subset=["triage_acuity", "patient_id", "encounter_id"])
+# A deterministic, quota-bounded sample prevents the pandas driver from
+# exhausting Free Edition as the number of synthetic encounters grows.
+# xxhash64 balances old and new patient encounters; do not use an unseeded
+# take()/limit() as a substitute for a stable sampling order.
+max_local_rows = int(widget("max_local_rows", "4000"))
+if max_local_rows < 100 or max_local_rows > 20000:
+    raise ValueError("max_local_rows must be between 100 and 20000 in Free Edition")
+candidates = (
+    df.orderBy(F.xxhash64("patient_id", "encounter_id"))
+    .limit(max_local_rows + 1)
+    .toPandas()
+)
+training_capped = len(candidates) > max_local_rows
+pdf = candidates.iloc[:max_local_rows].copy()
+if len(pdf) < 100 or pdf["patient_id"].nunique() < 10:
+    raise ValueError(
+        "Need at least 100 training rows and 10 distinct patients for group-held-out evaluation"
     )
-if len(pdf) < 100:
-    raise ValueError(f"Need at least 100 training rows; found {len(pdf)}")
+print(f"Training examples: {len(pdf)}; sample capped: {training_capped}; "
+      f"unique training patients: {pdf['patient_id'].nunique()}")
 
 numeric = [
     "age", "systolic_bp", "diastolic_bp", "heart_rate", "respiratory_rate",
@@ -85,10 +95,19 @@ y = pdf["triage_acuity"].astype(int)
 if y.nunique() < 2:
     raise ValueError("Training target contains fewer than 2 classes")
 
-stratify = y if y.value_counts().min() >= 2 else None
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.25, random_state=42, stratify=stratify
-)
+# Split by *patient*, not by encounter. In the legacy data, one patient has
+# multiple encounters; an encounter-level split leaks patient identity across
+# training and evaluation and overstates generalization performance.
+splitter = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=42)
+train_idx, test_idx = next(splitter.split(X, y, groups=pdf["patient_id"]))
+X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+train_groups = set(pdf.iloc[train_idx]["patient_id"])
+test_groups = set(pdf.iloc[test_idx]["patient_id"])
+if train_groups & test_groups:
+    raise AssertionError("Patient leakage detected across train/test split")
+if y_train.nunique() < 2 or len(y_test) == 0:
+    raise ValueError("Insufficient patient-level diversity after train/test split")
 
 numeric_pipe = Pipeline([("imputer", SimpleImputer(strategy="median"))])
 categorical_pipe = Pipeline([
@@ -100,12 +119,12 @@ preprocessor = ColumnTransformer([
     ("categorical", categorical_pipe, categorical),
 ])
 model = RandomForestClassifier(
-    n_estimators=160,
+    n_estimators=96,
     max_depth=12,
     min_samples_leaf=2,
     random_state=42,
     class_weight="balanced_subsample",
-    n_jobs=-1,
+    n_jobs=2,  # Limit Free Edition serverless CPU contention.
 )
 pipeline = Pipeline([("preprocessor", preprocessor), ("model", model)])
 
@@ -118,18 +137,31 @@ with mlflow.start_run(run_name="careflow360-random-forest") as run:
     pipeline.fit(X_train, y_train)
     pred = pipeline.predict(X_test)
 
+    dummy = DummyClassifier(strategy="most_frequent")
+    dummy.fit(X_train, y_train)
+    dummy_pred = dummy.predict(X_test)
     metrics = {
         "accuracy": float(accuracy_score(y_test, pred)),
+        "balanced_accuracy": float(balanced_accuracy_score(y_test, pred)),
+        "dummy_accuracy": float(accuracy_score(y_test, dummy_pred)),
+        "dummy_f1_macro": float(f1_score(y_test, dummy_pred, average="macro", zero_division=0)),
         "f1_macro": float(f1_score(y_test, pred, average="macro", zero_division=0)),
         "precision_macro": float(precision_score(y_test, pred, average="macro", zero_division=0)),
         "recall_macro": float(recall_score(y_test, pred, average="macro", zero_division=0)),
         "train_rows": int(len(X_train)),
         "test_rows": int(len(X_test)),
+        "train_unique_patients": int(len(train_groups)),
+        "test_unique_patients": int(len(test_groups)),
+        "training_sample_capped": int(training_capped),
     }
     mlflow.log_params({
         "model_type": "RandomForestClassifier",
-        "n_estimators": 160,
+        "n_estimators": 96,
         "max_depth": 12,
+        "train_test_strategy": "patient_group_shuffle_split",
+        "sampling_strategy": "stable_xxhash64_cap",
+        "max_local_rows": max_local_rows,
+        "n_jobs": 2,
         "data_classification": "synthetic_or_public",
         "clinical_use": "prohibited_demo_only",
     })
@@ -174,20 +206,34 @@ current_keys = (
     .select("patient_id", "encounter_id")
     .dropDuplicates()
 )
-current_patient_count = current_keys.count()
-if current_patient_count > max_local_rows:
+# Only new patient IDs need a prediction: the existing table is append-only.
+# Do not bring 600, 20,000, or more already-scored patients back to pandas.
+if spark.catalog.tableExists(prediction_table):
+    existing_ids = spark.table(prediction_table).select("patient_id").dropDuplicates()
+    new_keys = current_keys.join(existing_ids, "patient_id", "left_anti")
+else:
+    new_keys = current_keys
+new_patient_count = new_keys.count()
+print(f"Previously unscored current patients: {new_patient_count}")
+if new_patient_count > max_local_rows:
     raise RuntimeError(
-        f"Current patient count {current_patient_count} exceeds max_local_rows="
-        f"{max_local_rows}; use distributed scoring instead of collecting more rows."
+        f"{new_patient_count} unscored current patients exceed max_local_rows="
+        f"{max_local_rows}; score in smaller batches instead of unbounded collection."
     )
-# Join in Spark so the 2,800 historical training encounters are not all published
-# as 2,800 simultaneous current patient predictions.
-score_src = df.join(current_keys, ["patient_id", "encounter_id"], "inner")
-score_pdf = score_src.select("patient_id", "encounter_id", *features).limit(max_local_rows + 1).toPandas()
-ensure_current_patient_coverage(score_pdf, current_patient_count)
-loaded = mlflow.pyfunc.load_model(f"models:/{full_model_name}@Champion")
-score_pdf["predicted_triage_acuity"] = loaded.predict(score_pdf[features]).astype(int)
-score_sdf = spark.createDataFrame(score_pdf)
+if new_patient_count:
+    # Join by both patient and encounter, so legacy historical encounters
+    # are never mistaken for the patient's current episode.
+    score_src = df.join(new_keys, ["patient_id", "encounter_id"], "inner")
+    score_pdf = (
+        score_src.select("patient_id", "encounter_id", *features)
+        .limit(max_local_rows + 1).toPandas()
+    )
+    ensure_current_patient_coverage(score_pdf, new_patient_count)
+    loaded = mlflow.pyfunc.load_model(f"models:/{full_model_name}@Champion")
+    score_pdf["predicted_triage_acuity"] = loaded.predict(score_pdf[features]).astype(int)
+    score_sdf = spark.createDataFrame(score_pdf)
+else:
+    print("Idempotent scoring: no previously unseen patients; existing predictions preserved.")
 
 # The deployed triage_predictions Delta table may have appendOnly enabled.
 # Never overwrite or delete existing patient predictions. Insert-only MERGE
@@ -224,8 +270,9 @@ def insert_new_patient_predictions(spark, target_name, source):
     return "insert_only_merge"
 
 
-# Import F only for the duplicate-key verification above.
-from pyspark.sql import functions as F
-write_mode = insert_new_patient_predictions(spark, prediction_table, score_sdf)
-print(f"Prediction table {prediction_table}: {write_mode}; source current patients={len(score_pdf)}")
+if new_patient_count:
+    write_mode = insert_new_patient_predictions(spark, prediction_table, score_sdf)
+    print(f"Prediction table {prediction_table}: {write_mode}; new patients={new_patient_count}")
+else:
+    print(f"Prediction table {prediction_table}: unchanged (no new patient IDs)")
 print("Existing predictions are preserved; only previously unseen patient IDs are inserted.")
