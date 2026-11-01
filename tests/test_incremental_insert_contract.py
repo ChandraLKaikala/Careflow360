@@ -137,7 +137,7 @@ class FakeDeltaTable:
 
     @classmethod
     def forName(cls, spark, name):
-        cls.target = spark.datasets[name]
+        cls.target = spark.table(name)
         return cls
 
     @classmethod
