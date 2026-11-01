@@ -51,8 +51,6 @@ if num_patients < 50 or num_patients > 2000:
     raise ValueError("num_patients must be between 50 and 2000")
 if num_batches < 1 or num_batches > 50:
     raise ValueError("num_batches must be between 1 and 50")
-if num_batches > num_patients:
-    raise ValueError("num_batches cannot exceed num_patients")
 if seconds_between_batches < 0 or seconds_between_batches > 300:
     raise ValueError("seconds_between_batches must be between 0 and 300")
 if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", run_id):
