@@ -1,6 +1,6 @@
 # AI Search Extension
 
-The core job creates `gold_policy_chunks` and enables Delta Change Data Feed.
+The split-schema DAB core job creates `policy_chunks` in `careflow360_gold` and enables Delta Change Data Feed. The unified quickstart uses `gold_policy_chunks` in its single schema. The AI Search source table honors `table_prefix` (empty by default; use `gold_` for unified quickstart).
 
 ## Default deployment: semantic + keyword hybrid retrieval
 
