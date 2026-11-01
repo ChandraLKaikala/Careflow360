@@ -38,7 +38,46 @@ def model_feature_lists():
     return lists["numeric"], lists["categorical"]
 
 
+def scoring_coverage_guard():
+    source = ROOT / "src/notebooks/04_train_triage_model.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    fn = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "ensure_current_patient_coverage"
+    )
+    namespace = {}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), str(source), "exec"), namespace)
+    return namespace["ensure_current_patient_coverage"]
+
+
 class ModelOutputContractTests(unittest.TestCase):
+    def test_current_patient_scoring_coverage_and_uniqueness(self):
+        guard = scoring_coverage_guard()
+        current = pd.DataFrame({
+            "patient_id": ["P1", "P2"],
+            "encounter_id": ["E1_new", "E2_new"],
+        })
+        guard(current, 2)  # one current encounter per patient is valid
+        with self.assertRaisesRegex(RuntimeError, "Expected 3 current patients"):
+            guard(current, 3)
+        with self.assertRaisesRegex(RuntimeError, "duplicate current patient"):
+            guard(pd.DataFrame({
+                "patient_id": ["P1", "P1"],
+                "encounter_id": ["E1_old", "E1_new"],
+            }), 2)
+        with self.assertRaisesRegex(RuntimeError, "null patient or encounter"):
+            guard(pd.DataFrame({
+                "patient_id": ["P1", "P2"],
+                "encounter_id": ["E1_new", None],
+            }), 2)
+        with self.assertRaisesRegex(RuntimeError, "no current patient"):
+            guard(current.iloc[:0], 0)
+        source = (ROOT / "src/notebooks/04_train_triage_model.py").read_text()
+        self.assertIn('df.join(current_keys, ["patient_id", "encounter_id"], "inner")', source)
+        self.assertIn('spark.table(current_patient_table)', source)
+        self.assertIn('ensure_current_patient_coverage(score_pdf, current_patient_count)', source)
+
     def test_synthetic_model_features_train_and_predict(self):
         fs = FakeFs()
         params = {
