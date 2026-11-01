@@ -62,13 +62,29 @@ Use `01_generate_sample_data.py` on serverless with `num_patients=50`, `num_batc
 `/Volumes/<catalog>/<pipeline_schema>/landing/manifests/`.
 Then trigger the **existing** Lakeflow pipeline and update the presentation views.
 Read patient counts before and after in `<catalog>.careflow360_gold.patient_360`:
-the count should grow by 50 **if no rows are dropped and the run succeeds**.
-Do not claim success without confirming that actual result.
+the count should grow by 50 **only if all 50 new run-scoped IDs are ingested and the refresh succeeds**.
+Do not claim success without confirming the actual result. Previous observed 600 patients would
+therefore become **650** after one successful controlled 50-patient append, not 600.
+
+The updated DAB daily generator receives `run_id: "{{job.run_id}}"` and publishes both
+`run_id` and `num_patients` as Databricks Job task values. The final validation task
+receives those exact values using dynamic references, then verifies the current run contributes
+exactly 50 (or 100 in scheduled production runs) new distinct patients in Bronze triage,
+Silver triage, Gold Patient 360 and Gold predictions. **Zero added patients causes a job failure**,
+not a green success. This requires deploying the newer six-task job (not just Git pulling).
 
 Then run the ML notebook on the Gold presentation schema, followed by `06_validate.py` with
 `layout=split`, `gold_schema=careflow360_gold`, `silver_schema=careflow360_silver`,
-`bronze_schema=careflow360_bronze` and `max_snapshot_age_hours=36`.
-Confirm the generated predictions table is `triage_predictions`, not a second `gold_triage_predictions`.
+`bronze_schema=careflow360_bronze`, `max_snapshot_age_hours=36`,
+`expected_run_id=<run_id from generated manifest>`, `expected_new_patients=50`.
+The prediction table must be `triage_predictions`, not `gold_triage_predictions`.
+
+The updated ML scorer uses an **insert-only Delta MERGE** by `patient_id` so old prediction
+rows are retained and brand-new patient IDs insert fresh rows. The existing predictions
+table is configured with the `appendOnly` Delta feature, so matched updates are *not*
+performed without a deliberate separate change to its table properties. This is
+deliberately different from Patient 360 (a materialized latest-state view) and
+location-history SCD2 (a change-tracking table).
 
 ## Step 5 — Verify scheduling and visibility
 

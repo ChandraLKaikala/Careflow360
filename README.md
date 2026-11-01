@@ -123,26 +123,19 @@ Portfolio/demo project. All data is synthetic.
 
 ## 🔄 Daily Incremental Pipeline (Added 2026-10-03)
 
-### Automated Data Growth
-- **Schedule**: Daily at 2:00 AM UTC
-- **Job ID**: 484367296292508
-- **Growth**: +100 patients per day across all layers
+### Automated Data Growth (after deploying updated GitHub code)
 
-### What Happens Daily:
-1. 🎲 Generate 100 new synthetic patients
-2. 📊 Pipeline refresh (bronze → silver → gold)
-3. 🔍 Update presentation views
-4. 🤖 Retrain ML model
+- **Schedule defined in GitHub:** Daily at 2:00 AM UTC
+- **Existing Databricks job ID:** `484367296292508` (still using an older 4-task configuration until synchronized)
+- **New patient count per scheduled run:** 100 *if* all records are accepted and the pipeline completes
+- **Unique keys:** `P<job_run_id>-<patient_number>` for every new batch, preventing reuse of legacy patient IDs
+- **Ingestion:** append-only JSON landing files; Bronze and Silver retain events; Patient 360 materialized view gains a row for every unseen patient ID
+- **ML predictions:** insert-only Delta MERGE, preserving existing patient predictions and inserting one for each new patient
+- **Validation:** the six-task GitHub job checks its own run ID and fails unless 100 new patients appear in Bronze/Silver/Gold and the predictions table
 
-### Growth Projection:
-| Timeline | Patient Count |
-|----------|--------------|
-| Current  | 600          |
-| Week 1   | 1,300        |
-| Month 1  | 3,600        |
-| Month 3  | 9,600        |
+**Known live baseline:** 600 unique patients as measured on November 1, 2026. A properly deployed and validated 100-patient scheduled run should produce **700 patients**, then **800 after a second distinct run**. This is an *expected acceptance test*, not a claim that the existing workspace has been upgraded or that each scheduled run always fires.
 
-**16 of 17 tables grow automatically** with each run, keeping your dashboard and analytics up-to-date!
+The live job presently reuses legacy patient IDs and has missed scheduled dates. GitHub CI tests cannot fix that until the new notebook code and task definition are deployed safely to the existing workspace. See [workspace synchronization](docs/DATABRICKS_WORKSPACE_SYNC.md) and [end-to-end acceptance checks](docs/END_TO_END_VERIFICATION.md).
 
 ---
 

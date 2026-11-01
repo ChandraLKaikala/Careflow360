@@ -112,7 +112,8 @@ def iso(ts):
 
 def write_jsonl(path, records):
     payload = "\n".join(json.dumps(record, separators=(",", ":")) for record in records) + "\n"
-    dbutils.fs.put(path, payload, True)
+    # Never overwrite Auto Loader landing files, including after interrupted replays.
+    dbutils.fs.put(path, payload, False)
 
 
 def synthetic_triage(age):
@@ -312,6 +313,12 @@ manifest = {
 }
 dbutils.fs.put(f"{manifest_dir}/{run_id}.json", json.dumps(manifest, indent=2), False)
 dbutils.fs.put(f"{base}/source_manifest.json", json.dumps(manifest, indent=2), True)
+
+# Publish the exact run identity to the downstream validation task. Without
+# this, a job can succeed while repeatedly refreshing the same patient IDs.
+# In a standalone interactive notebook Databricks ignores taskValues.set().
+dbutils.jobs.taskValues.set(key="run_id", value=run_id)
+dbutils.jobs.taskValues.set(key="num_patients", value=num_patients)
 
 print(json.dumps(manifest, indent=2))
 print("Synthetic micro-batches are ready. Start/refresh the Lakeflow pipeline next.")

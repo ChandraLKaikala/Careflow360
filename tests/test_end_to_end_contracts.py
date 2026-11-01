@@ -62,10 +62,20 @@ class FakeFs:
         raise AssertionError("Generated data must never be deleted by a daily run")
 
 
+class FakeTaskValues:
+    def __init__(self):
+        self.values = {}
+
+    def set(self, key, value):
+        self.values[key] = value
+        return True
+
+
 class FakeDbutils:
     def __init__(self, values, fs=None):
         self.widgets = FakeWidgets(values)
         self.fs = fs or FakeFs()
+        self.jobs = types.SimpleNamespace(taskValues=FakeTaskValues())
 
 
 class FakeSparkResult:
@@ -109,7 +119,10 @@ class GeneratorOutputTests(unittest.TestCase):
     def test_generated_records_and_append(self):
         fs = FakeFs()
         for run_id in ("smoke01", "smoke02"):
-            execute_code(GENERATOR, FakeSpark(), FakeDbutils(self.settings(run_id), fs))
+            job = FakeDbutils(self.settings(run_id), fs)
+            execute_code(GENERATOR, FakeSpark(), job)
+            self.assertEqual(job.jobs.taskValues.values["run_id"], run_id)
+            self.assertEqual(job.jobs.taskValues.values["num_patients"], 50)
 
         triage = event_rows(fs, "triage")
         vitals = event_rows(fs, "vitals")
