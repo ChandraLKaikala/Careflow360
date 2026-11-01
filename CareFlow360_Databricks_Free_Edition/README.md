@@ -1,5 +1,10 @@
 # CareFlow360 — Real-Time Intelligent Hospital Operations Lakehouse
 
+> **Existing workspace caution:** This Free Edition package mirrors the root DAB sources.
+> GitHub changes are not automatically deployed to workspace notebooks/jobs.
+> Before a live deploy, follow [the existing-job sync runbook](../docs/DATABRICKS_WORKSPACE_SYNC.md)
+> to avoid duplicate pipelines and preserve the 02:00 UTC job. Use synthetic data only.
+
 An end-to-end Databricks Free Edition portfolio project that simulates a hospital command center using synthetic/public healthcare data.
 
 ## What this project demonstrates

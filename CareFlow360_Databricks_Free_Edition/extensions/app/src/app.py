@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 import streamlit as st
 from databricks import sql
@@ -10,6 +11,12 @@ command_center_table = os.environ["COMMAND_CENTER_TABLE"]
 patient_360_table = os.environ["PATIENT_360_TABLE"]
 alerts_table = os.environ["ALERTS_TABLE"]
 flow_table = os.environ["FLOW_TABLE"]
+
+# Environment-supplied SQL identifiers must be three-part Unity Catalog names.
+safe_table = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){2}$")
+for table_name in (command_center_table, patient_360_table, alerts_table, flow_table):
+    if not safe_table.fullmatch(table_name):
+        raise ValueError("Expected a three-part Unity Catalog table name")
 
 
 def connection():
@@ -34,7 +41,7 @@ st.title("CareFlow360 — Hospital Operations Command Center")
 st.caption("Synthetic/public portfolio data only. Operational demo — not clinical decision support.")
 
 try:
-    kpi = query(f"SELECT * FROM {command_center_table} LIMIT 1")
+    kpi = query(f"SELECT * FROM {command_center_table} ORDER BY snapshot_ts DESC LIMIT 1")
     if not kpi.empty:
         r = kpi.iloc[0]
         c1, c2, c3, c4 = st.columns(4)
@@ -42,6 +49,12 @@ try:
         c2.metric("ED patients", int(r.get("ed_patients", 0) or 0))
         c3.metric("ICU patients", int(r.get("icu_patients", 0) or 0))
         c4.metric("Operational alerts", int(r.get("operational_alert_patients", 0) or 0))
+        snapshot = pd.to_datetime(r.get("snapshot_ts"), errors="coerce", utc=True)
+        if pd.notna(snapshot):
+            hours_old = (pd.Timestamp.now(tz="UTC") - snapshot).total_seconds() / 3600
+            st.caption(f"Last KPI snapshot: {snapshot} ({hours_old:.1f} hours old)")
+            if hours_old > 30:
+                st.warning("KPI snapshot is stale (>30 hours). Do not treat counts as live.")
 
     st.subheader("Current department census")
     census = query(f"""
@@ -59,12 +72,14 @@ try:
 
     left, right = st.columns(2)
     with left:
-        st.subheader("Latest synthetic operational alerts")
+        st.subheader("Synthetic alert activity by hour (aggregated)")
         alerts = query(f"""
-            SELECT patient_id, event_ts, heart_rate, spo2, systolic_bp,
-                   temperature_c, fall_detected
+            SELECT DATE_TRUNC('HOUR', event_ts) AS event_hour,
+                   source, COUNT(*) AS alert_records,
+                   SUM(CASE WHEN fall_detected THEN 1 ELSE 0 END) AS fall_records
             FROM {alerts_table}
-            ORDER BY event_ts DESC
+            GROUP BY DATE_TRUNC('HOUR', event_ts), source
+            ORDER BY event_hour DESC
             LIMIT 100
         """)
         st.dataframe(alerts, use_container_width=True, hide_index=True)
@@ -82,4 +97,4 @@ try:
 
 except Exception as exc:
     st.error("Could not query CareFlow360 tables. Verify the SQL warehouse is running and app resources are bound.")
-    st.exception(exc)
+    # Detailed exceptions should stay in protected application logs.
