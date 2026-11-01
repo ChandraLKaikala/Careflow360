@@ -2,7 +2,7 @@
 
 A complete, detailed walkthrough of the CareFlow360 hospital operations analytics platform.
 
-**Run order:** `00_preflight` → `01_generate_sample_data` → `02_kaggle_normalize` → SDP Pipeline (bronze→silver→gold) → `03_create_views` → `04_train_triage_model` → `05_create_policy_docs` → `06_validate` → `07_ai_functions`
+**Core scheduled order:** Generate new synthetic patients → incremental Lakeflow refresh (Bronze/Silver/Gold) → presentation views → (ML training and policy creation in parallel) → validation. The Kaggle normalization notebook, preflight, and optional AI functions notebook are separate/manual learning workflows.
 
 ---
 
@@ -12,10 +12,10 @@ A complete, detailed walkthrough of the CareFlow360 hospital operations analytic
 Ingests raw hospital events from JSON files in the landing volume using Auto Loader (cloudFiles). Creates 4 Bronze streaming tables with explicit schema enforcement and data quality gates.
 
 ### Tables created (4)
-- `bronze_triage` (600 rows) — ED triage assessments with vitals, demographics, acuity
-- `bronze_vitals` (2,065 rows) — Continuous vital sign monitoring events
-- `bronze_adt` (1,385 rows) — Admission/Discharge/Transfer (ADT) location events
-- `bronze_chief_complaints` (600 rows) — Patient chief complaint text
+- `bronze_triage` — ED triage assessments with vitals, demographics, acuity
+- `bronze_vitals` — Continuous vital sign monitoring events
+- `bronze_adt` — Admission/Discharge/Transfer (ADT) location events
+- `bronze_chief_complaints` — Patient chief complaint text
 
 ### Key design decisions
 - **Explicit StructType schemas** — No schema drift; invalid records dropped at ingest
@@ -31,19 +31,19 @@ Ingests raw hospital events from JSON files in the landing volume using Auto Loa
 Transforms raw Bronze events into cleansed, deduplicated, enriched streaming tables with derived columns, quarantine, and SCD2 tracking.
 
 ### Tables created (6)
-- `silver_triage` (600 rows) — Validated triage events with shock_index, pulse_pressure
-- `silver_triage_quarantine` (0 rows) — Rejected records with rejection_reason
-- `silver_vitals` (2,065 rows) — Cleansed vitals with operational_alert_flag
-- `silver_adt` (1,385 rows) — Validated ADT events
-- `silver_chief_complaints` (600 rows) — Cleaned complaint text
-- `silver_patient_location_history` (1,357 rows) — SCD2 via AUTO CDC
+- `silver_triage` — Validated triage events with shock_index, pulse_pressure
+- `silver_triage_quarantine` — Rejected records with rejection_reason
+- `silver_vitals` — Cleansed vitals with operational_alert_flag
+- `silver_adt` — Validated ADT events
+- `silver_chief_complaints` — Cleaned complaint text
+- `silver_patient_location_history` — SCD2 via AUTO CDC
 
 ### Key design decisions
 - **Watermark + dropDuplicates** — 1-day watermark eliminates duplicates
 - **DQ quarantine** — Rejected records retained with rejection_reason
 - **Derived columns** — shock_index = HR/systolic_bp, pulse_pressure = systolic-diastolic
 - **Operational alert flag** — TRUE for HR<50/>120, SpO2<90, BP<90/>180, temp>38.5/<35, fall=TRUE
-- **AUTO CDC SCD2** — Patient location tracked with valid_from/valid_to/is_current
+- **AUTO CDC SCD2** — Patient-location history tracked using `__START_AT` and `__END_AT`; previous versions are preserved
 
 ---
 
@@ -53,13 +53,13 @@ Transforms raw Bronze events into cleansed, deduplicated, enriched streaming tab
 Creates business-ready materialized views for dashboards, Genie, ML training, and AI Search.
 
 ### Tables created (5 MVs + 2 notebook tables)
-- `gold_patient_360` (600) — Latest snapshot per patient: triage + vitals + complaint + location
-- `gold_hospital_command_center` (1) — KPI summary: active, ED, ICU, alerts, avg acuity
-- `gold_department_hourly` (90) — Hourly ADT events by department
-- `gold_live_alerts` (74) — Patients with active vital-sign alerts
-- `gold_triage_training` (600) — ML feature table
-- `gold_triage_predictions` (600, notebook) — Batch ML predictions
-- `gold_policy_chunks` (6, notebook) — RAG policy documents
+- `gold_patient_360` — Latest snapshot per patient: triage + vitals + complaint + location
+- `gold_hospital_command_center` — KPI summary: active, ED, ICU, alerts, avg acuity
+- `gold_department_hourly` — Hourly ADT events by department
+- `gold_live_alerts` — Patients with active vital-sign alerts
+- `gold_triage_training` — ML feature table
+- `triage_predictions` (physical table in the split Gold presentation schema) — Batch ML predictions
+- `policy_chunks` (physical table in the split Gold presentation schema) — RAG policy documents
 
 ### Key design decisions
 - **Materialized views** — Auto-refreshed by SDP pipeline
@@ -72,7 +72,7 @@ Creates business-ready materialized views for dashboards, Genie, ML training, an
 Creates UC schema `workspace.careflow360`, volume `landing`, and landing directories for each event type. Idempotent with `IF NOT EXISTS`.
 
 ## 01 · Generate Sample Data
-Generates 600 patients with deterministic synthetic data (fixed seed). 600 triage, 2,065 vitals, 1,385 ADT, 600 complaints. JSON format for Auto Loader.
+Generates run-scoped synthetic patient identifiers and append-only ADT, triage, vitals and complaint JSON events for Auto Loader. The scheduled source job config requests 100 new patients per execution, not a repeated static cohort. Each run has an independent manifest.
 
 ## 02 · Kaggle Normalize
 Normalizes external data to JSON schema expected by Bronze. Column mapping, type casting, null handling.
@@ -81,28 +81,22 @@ Normalizes external data to JSON schema expected by Bronze. Column mapping, type
 Creates 15 presentation views (4 bronze, 6 silver, 5 gold) pointing to pipeline tables. Strips layer prefix for clean names. Runs as job task after pipeline refresh.
 
 ## 04 · Train Triage ML Model
-RandomForest (160 trees, depth 12, 87% accuracy). MLflow + UC registry with Champion alias. 600 batch predictions. Widget-parameterized for portability.
+RandomForest (96 trees, depth 12, up to 2 CPU workers). A deterministic historical-encounter sample is capped at 4,000 rows by default for Free Edition. Evaluation holds out complete patient IDs using GroupShuffleSplit and logs majority-class baselines, accuracy, balanced accuracy and macro-F1. MLflow registers a Unity Catalog model with Champion alias. Insert-only Delta MERGE adds predictions for previously unseen current patient IDs. No fixed accuracy is promised; inspect actual MLflow metrics.
 
 ## 05 · Create Policy Documents
 6 synthetic policies (ICU escalation, ED surge, bed assignment, discharge, data quality, synthetic data). Chunked for RAG. Delta CDF enabled.
 
 ## 06 · Validate
-End-to-end validation: object existence, row counts, referential integrity, DQ checks across all layers.
+Aggregate checks for required assets, one-row-per-patient grain, acuity ranges and snapshot freshness; in the scheduled job it also requires the current run's new patient IDs to appear in Bronze, Silver, Gold Patient 360 and predictions.
 
 ## 07 · AI Functions
-ai_classify ✅ (50 complaints), ai_extract v2.1 ✅ (20 extractions), ai_forecast ⚠️ (preview disabled), direct SQL ✅. All references use medallion views.
+The executable notebook uses Free Edition-friendly SQL for KPI aggregates, complaint-keyword grouping and a moving-average baseline; SQL AI functions are optional and are not prerequisites of the scheduled core job.
 
 ---
 
-## Key Numbers
-| Metric | Value |
-|---|---|
-| Pipeline tables | 17 |
-| Presentation views | 15 |
-| Patients | 600 |
-| Vital events | 2,065 |
-| ADT events | 1,385 |
-| Live alerts | 74 |
-| ML accuracy | ~87% |
-| Genie benchmarks | 8/8 passed |
-| Dashboard widgets | 10 |
+## Verification scope
+
+- Source pipeline declares **15 materialized/streaming datasets**. The split-schema layout exposes **15 presentation views** and two additional physical Gold tables.
+- As checked on November 1, 2026, the live workspace contained **600 unique current patient IDs**, **2,800 historical triage encounters**, **5,609 ADT events** and **600 current predictions**. These are historical observations, not perpetual row-count constants.
+- The published dashboard had **3 pages, 29 widgets and 18 SQL datasets**. SQL queries were tested independently; visual rendering was not independently certified.
+- Patient growth and the MLflow model's holdout accuracy must be verified **after** the corrected code has actually been deployed to Databricks. GitHub CI passing is not that deployment.
