@@ -16,7 +16,7 @@
 # MAGIC
 # MAGIC **[CareFlow360 — Complete Project Presentation, Cell 2]**
 # MAGIC
-# MAGIC "Let me start with a quick summary of what's been achieved. The platform has an SDP pipeline with 17 tables across Bronze, Silver, and Gold layers, running on serverless compute with Photon acceleration. There's a daily incremental job that generates new patients, refreshes the pipeline, creates presentation views, and retrains the ML model — all running automatically at 2 AM UTC. The ML model is a RandomForest classifier achieving about 87% accuracy on triage acuity prediction, registered in Unity Catalog with a Champion alias. The AI/BI dashboard has 10 verified widgets, and the Genie space passed all 8 benchmark questions."
+# MAGIC "Let me start with a quick summary of what's been achieved. The platform has an SDP pipeline with 17 tables across Bronze, Silver, and Gold layers, running on serverless compute with Photon acceleration. There's a scheduled 2 AM UTC daily job that generates synthetic patients, refreshes Lakeflow, creates presentation views and trains ML, subject to observed missed dates and Free Edition quotas. The ML model is a RandomForest classifier achieving about patient-held-out evaluation (verify current MLflow metrics) on triage acuity prediction, registered in Unity Catalog with a Champion alias. The AI/BI dashboard has 29 widgets across 3 pages with SQL datasets independently verified, and the Genie space passed all 8 benchmark questions."
 # MAGIC
 # MAGIC **[CareFlow360 — Complete Project Presentation, Cell 3]**
 # MAGIC
@@ -128,7 +128,7 @@
 # MAGIC
 # MAGIC **[04_train_triage_model, Cell 4]**
 # MAGIC
-# MAGIC "Cell 4 is where the training happens. First, we load the training data from `gold_triage_training` and convert to pandas. We validate that we have at least 100 rows and at least 2 classes. Then we define 12 numeric features and 3 categorical features — the same ones from the Gold training table. We do a train-test split with 25% test size and stratification. The preprocessing pipeline uses `SimpleImputer` with median strategy for numeric features and most-frequent for categorical, followed by `OneHotEncoder` with `handle_unknown='ignore'`. The model itself is a `RandomForestClassifier` with 160 trees, max depth of 12, min_samples_leaf of 2, and `class_weight='balanced_subsample'` to handle class imbalance."
+# MAGIC "Cell 4 is where the training happens. First, we load the training data from `gold_triage_training` and convert to pandas. We validate that we have at least 100 rows and at least 2 classes. Then we define 12 numeric features and 3 categorical features — the same ones from the Gold training table. We do a GroupShuffleSplit holding out 25% of patient groups without cross-patient leakage. The preprocessing pipeline uses `SimpleImputer` with median strategy for numeric features and most-frequent for categorical, followed by `OneHotEncoder` with `handle_unknown='ignore'`. The model itself is a `RandomForestClassifier` with 96 trees, max depth of 12, min_samples_leaf of 2, and `class_weight='balanced_subsample'` to handle class imbalance."
 # MAGIC
 # MAGIC **[04_train_triage_model, Cell 5]**
 # MAGIC
