@@ -1,0 +1,88 @@
+"""Offline smoke test for CareFlow360's ML feature and prediction output contract.
+
+No Databricks MLflow registry or Spark execution is covered by this test.
+"""
+from __future__ import annotations
+
+import ast
+import pathlib
+import unittest
+
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+
+from test_end_to_end_contracts import FakeDbutils, FakeFs, FakeSpark, execute_code, event_rows
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def model_feature_lists():
+    source = ROOT / "src/notebooks/04_train_triage_model.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    lists = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id in ("numeric", "categorical")
+            for t in node.targets
+        ):
+            value = ast.literal_eval(node.value)
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    lists[target.id] = value
+    return lists["numeric"], lists["categorical"]
+
+
+class ModelOutputContractTests(unittest.TestCase):
+    def test_synthetic_model_features_train_and_predict(self):
+        fs = FakeFs()
+        params = {
+            "catalog": "workspace", "schema": "careflow360", "volume": "landing",
+            "num_patients": "300", "num_batches": "3", "run_id": "modeltest01",
+            "reset_events": "false", "seconds_between_batches": "0",
+        }
+        execute_code(ROOT / "src/notebooks/01_generate_sample_data.py",
+                     FakeSpark(), FakeDbutils(params, fs))
+        df = pd.DataFrame(event_rows(fs, "triage"))
+        df["shock_index"] = df["heart_rate"] / df["systolic_bp"]
+        numeric, categorical = model_feature_lists()
+        features = numeric + categorical
+        self.assertEqual(set(features) - set(df.columns), set())
+
+        X = df[features]
+        y = df["triage_acuity"].astype(int)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.25, random_state=42,
+            stratify=y if y.value_counts().min() >= 2 else None,
+        )
+        pre = ColumnTransformer([
+            ("numeric", Pipeline([("imputer", SimpleImputer(strategy="median"))]), numeric),
+            ("categorical", Pipeline([
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("onehot", OneHotEncoder(handle_unknown="ignore")),
+            ]), categorical),
+        ])
+        model = Pipeline([
+            ("preprocessor", pre),
+            ("model", RandomForestClassifier(
+                n_estimators=160, max_depth=12, min_samples_leaf=2,
+                random_state=42, class_weight="balanced_subsample", n_jobs=1,
+            )),
+        ])
+        model.fit(X_train, y_train)
+        predictions = model.predict(X_test)
+        self.assertEqual(len(predictions), len(X_test))
+        self.assertEqual(set(predictions).difference({1, 2, 3, 4, 5}), set())
+        self.assertGreaterEqual(accuracy_score(y_test, predictions), 0.0)
+        self.assertLessEqual(accuracy_score(y_test, predictions), 1.0)
+        self.assertGreaterEqual(f1_score(y_test, predictions, average="macro", zero_division=0), 0.0)
+        self.assertEqual(len(X_train) + len(X_test), 300)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
