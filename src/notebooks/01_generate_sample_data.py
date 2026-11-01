@@ -32,10 +32,10 @@ def widget(name, default, label=None):
         return str(default)
 
 catalog = widget("catalog", spark.sql("SELECT current_catalog() AS c").first()["c"])
-schema = widget("schema", "careflow360_dev")
+schema = widget("schema", "careflow360")
 volume = widget("volume", "landing")
-num_patients = int(widget("num_patients", "1200"))
-num_batches = int(widget("num_batches", "20"))
+num_patients = int(widget("num_patients", "100"))
+num_batches = int(widget("num_batches", "5"))
 seconds_between_batches = float(widget("seconds_between_batches", "0"))
 reset_events = widget("reset_events", "false").lower() == "true"
 run_id = widget("run_id", datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8])
