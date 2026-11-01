@@ -1,10 +1,10 @@
 # AI Search + RAG
 
-`core/src/notebooks/05_create_policy_docs.py` creates `gold_policy_chunks` with synthetic hospital-operations policy text and enables Delta Change Data Feed.
+`core/src/notebooks/05_create_policy_docs.py` creates `policy_chunks` in the **deployed split Gold schema** (`careflow360_gold`) and enables Delta Change Data Feed. The optional single-schema quickstart uses `gold_policy_chunks` instead. AI Search resources and both examples use `${var.table_prefix}policy_chunks`, with an empty prefix for split and `gold_` for unified.
 
 The default extension at `extensions/ai_search` creates a **HYBRID Delta Sync AI Search index** on a STANDARD endpoint. It combines semantic retrieval with keyword matching and uses a Databricks-hosted embedding endpoint/model service. The bundle defaults to `databricks-qwen3-embedding-0-6b`; override that variable if your workspace exposes a different supported embedding model.
 
-Deploy it only after the core job has created `gold_policy_chunks`:
+Deploy it only after the core job has created `policy_chunks` in the split Gold schema (or set `table_prefix=gold_` for the unified quickstart). Check that the embedding endpoint is available in your Free Edition workspace before attempting an optional index:
 
 ```bash
 cd extensions/ai_search
