@@ -132,133 +132,70 @@
 # DBTITLE 1,Notebook 3: 04_train_triage_model
 # MAGIC %md
 # MAGIC ---
-# MAGIC ## Notebook 3: `04_train_triage_model` — ML Training & Registration
+# MAGIC ## Notebook 3: `04_train_triage_model` — Resource-Bounded, Patient-Grouped ML
 # MAGIC
 # MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/04_train_triage_model`
-# MAGIC **Role**: Trains the RandomForest triage classifier, logs to MLflow, registers in UC, writes batch predictions
-# MAGIC **Used by**: Job task `train_ml_model`
-# MAGIC **Note**: The `schema` parameter was FIXED on Oct 10, 2026 — changed from `careflow360_gold` to `careflow360` (pipeline working schema where `gold_triage_training` table actually lives).
+# MAGIC **Run type**: ML task of the daily workflow after Lakeflow and presentation views.
 # MAGIC
-# MAGIC ### What It Does
-# MAGIC 1. **Data Loading** (Cell 4): Loads training data from `workspace.careflow360.gold_triage_training`, converts to pandas DataFrame, validates minimum 100 rows and 2+ classes
-# MAGIC 2. **Feature Engineering** (Cell 4): Defines 12 numeric features (age, vitals, shock_index, etc.) and 3 categorical features (arrival_mode, arrival_day, sex)
-# MAGIC 3. **Model Training** (Cell 4-5): Trains a scikit-learn Pipeline with ColumnTransformer (imputation + OneHotEncoder) and RandomForestClassifier (160 trees, max_depth=12, class_weight='balanced_subsample')
-# MAGIC 4. **MLflow Logging** (Cell 5): Logs accuracy, f1_macro, precision_macro, recall_macro, train_rows, test_rows; logs model with input_example
-# MAGIC 5. **UC Model Registration** (Cell 6): Registers model as `workspace.careflow360.triage_acuity_model` and sets `Champion` alias
-# MAGIC 6. **Batch Scoring** (Cell 7): Loads the Champion model, scores all patients, writes predictions to `workspace.careflow360.gold_triage_predictions`
+# MAGIC ### Pipeline and Free Edition enhancements
+# MAGIC 1. Reads the Gold `triage_training` presentation view (or unified-schema `gold_triage_training`).
+# MAGIC 2. Uses a stable XXHASH64 order to cap the pandas training sample to 4,000 encounters by default, rather than crashing as historical encounters accumulate.
+# MAGIC 3. Splits **by patient ID** with GroupShuffleSplit, preventing the same patient's different encounters from leaking between train and holdout.
+# MAGIC 4. Fits a scikit-learn pipeline with imputation, OneHotEncoder and a 96-tree RandomForest (depth 12, maximum 2 CPU workers).
+# MAGIC 5. Logs measured accuracy, balanced accuracy, macro-F1, macro-precision/recall, sample capping, distinct train/test patient counts and a majority-class baseline to MLflow.
+# MAGIC 6. Registers a Unity Catalog model under the configured Gold schema and updates the `Champion` alias.
+# MAGIC 7. Finds **previously unseen current patient IDs** with a Spark left-anti join, scores only their latest encounter, and inserts only new IDs using Delta MERGE; historical predictions remain untouched.
 # MAGIC
-# MAGIC ### Key Parameters (from job)
-# MAGIC - `catalog=workspace, schema=careflow360` (FIXED Oct 10)
-# MAGIC - `experiment_path` defaults to `/Workspace/Users/{user}/careflow360/triage_experiment`
+# MAGIC **Expected physical prediction target (split layout)**: `workspace.careflow360_gold.triage_predictions`.
+# MAGIC **Data**: Fabricated synthetic patient records only. This ML model is **not validated for clinical use**.
 # MAGIC
-# MAGIC ### Key Design Decisions
-# MAGIC - **scikit-learn Pipeline**: Preprocessing + model in a single pipeline for reproducibility
-# MAGIC - **UC model registry**: Uses `databricks-uc` registry URI for Unity Catalog model management
-# MAGIC - **Champion alias**: Latest model version gets the `Champion` alias for production reference
-# MAGIC - **Batch scoring**: Writes predictions to a physical Delta table for dashboard consumption
-# MAGIC - **Model metadata**: Logs data classification (synthetic) and clinical use (prohibited_demo_only) as params
+# MAGIC ### Performance interpretation
+# MAGIC Do not quote a permanent accuracy percentage. Read the actual held-out MLflow run and compare macro-F1 with the majority-class baseline. A patient-held-out estimate is not directly comparable to the earlier leaked encounter-level split.
 # MAGIC
-# MAGIC ### Performance
-# MAGIC - ~87% accuracy on test set (25% holdout)
-# MAGIC - Training takes ~30-40 seconds on serverless compute
-# MAGIC - Total notebook execution: ~46 seconds (including MLflow logging + UC registration + batch scoring)
 
 # COMMAND ----------
 
 # DBTITLE 1,Notebook 4: 05_create_policy_docs
 # MAGIC %md
 # MAGIC ---
-# MAGIC ## Notebook 4: `05_create_policy_docs` — Policy Document Chunking for RAG
+# MAGIC ## Notebook 4: `05_create_policy_docs` — Synthetic Policy Text
 # MAGIC
-# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/05_create_policy_docs`
-# MAGIC **Role**: Creates and chunks hospital policy documents for RAG / AI Search
+# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/05_create_policy_docs`.
+# MAGIC Generates six fabricated hospital-operations policy chunks and enables Delta Change Data Feed for the optional AI Search extension.
 # MAGIC
-# MAGIC ### What It Does
-# MAGIC 1. Creates 6 synthetic hospital policies:
-# MAGIC    - ICU Escalation Protocol
-# MAGIC    - ED Surge Capacity Plan
-# MAGIC    - Bed Assignment Rules
-# MAGIC    - Discharge Criteria
-# MAGIC    - Data Quality Standards
-# MAGIC    - Synthetic Data Usage Policy
-# MAGIC 2. Splits each policy into ~2-sentence chunks for RAG retrieval
-# MAGIC 3. Stores chunks in `workspace.careflow360.gold_policy_chunks` with metadata:
-# MAGIC    - `chunk_id`: `{doc_id}-C{chunk_number:02d}` format for traceability
-# MAGIC    - `source`: Policy document name
-# MAGIC    - `section`: Section within the policy
-# MAGIC 4. Enables Delta Change Data Feed (CDF) for streaming sync to vector search indexes
+# MAGIC **Physical output**: `workspace.careflow360_gold.policy_chunks` in split-schema DAB deployments; `gold_policy_chunks` in the unified quickstart.
+# MAGIC Each chunk has a stable `chunk_id`, document metadata and source text. Do not treat this generated text as authoritative clinical or hospital policy.
+# MAGIC AI Search is optional and requires an available workspace embedding endpoint and Free Edition quota.
 # MAGIC
-# MAGIC ### Key Design Decisions
-# MAGIC - **Chunk size**: 2 sentences balances context and retrieval precision
-# MAGIC - **Chunk ID format**: Traceable to source document and section
-# MAGIC - **CDF enabled**: Supports incremental sync to AI Search vector indexes
-# MAGIC - **Physical table** (not view): Policy chunks are generated, not derived from pipeline data
-# MAGIC
-# MAGIC ### Current Data
-# MAGIC - 6 policy documents → 6 chunks in `gold_policy_chunks`
 
 # COMMAND ----------
 
 # DBTITLE 1,Notebook 5: 06_validate
 # MAGIC %md
 # MAGIC ---
-# MAGIC ## Notebook 5: `06_validate` — Runtime Data Validation
+# MAGIC ## Notebook 5: `06_validate` — Read-Only Runtime Acceptance Gates
 # MAGIC
-# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/06_validate`
-# MAGIC **Role**: Comprehensive runtime validation of pipeline data quality
+# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/06_validate`.
+# MAGIC Checks that required Bronze, Silver and Gold assets exist and have expected nonempty outputs; quarantine/alert tables may legitimately be empty.
+# MAGIC It checks triage acuities, one Patient 360 row per distinct patient, prediction label ranges and command-center KPI snapshot age.
+# MAGIC In the scheduled job, it also receives `expected_run_id` and `expected_new_patients`, then **fails** unless that run's new patient IDs appear in Bronze triage, Silver triage, Gold Patient 360 and predictions.
+# MAGIC These are engineering/synthetic data checks, not clinical verification or comprehensive health-data compliance controls.
 # MAGIC
-# MAGIC ### What It Does
-# MAGIC Runs a series of validation checks across all pipeline tables:
-# MAGIC
-# MAGIC 1. **Table existence**: Verifies all expected tables exist in the pipeline schema
-# MAGIC 2. **Minimum row counts**: Checks each table has at least the expected minimum rows
-# MAGIC 3. **Schema validation**: Verifies required columns exist with correct types
-# MAGIC 4. **ESI range validation**: Confirms triage acuity values are 1-5
-# MAGIC 5. **Future timestamp check**: Ensures no event timestamps are in the future
-# MAGIC 6. **ADT event type validation**: Validates event_type is one of admit/transfer/discharge
-# MAGIC 7. **Clinical range validation**: Checks vital signs are within plausible clinical ranges
-# MAGIC 8. **Null checks**: Identifies critical fields with NULL values
-# MAGIC 9. **DQ blocking**: Raises an exception on critical failures (stops execution)
-# MAGIC 10. **Logging**: Writes validation results to monitoring tables
-# MAGIC
-# MAGIC ### Key Design Decisions
-# MAGIC - **Fail-fast on critical issues**: Raises exception if critical validations fail
-# MAGIC - **Comprehensive coverage**: Validates schema, data ranges, business rules, and data quality
-# MAGIC - **Logging**: Results logged to monitoring tables for historical tracking
-# MAGIC - **Non-blocking warnings**: Non-critical issues are logged but don't stop execution
 
 # COMMAND ----------
 
 # DBTITLE 1,Notebook 6: 07_ai_functions
 # MAGIC %md
 # MAGIC ---
-# MAGIC ## Notebook 6: `07_ai_functions` — AI Function Demonstrations
+# MAGIC ## Notebook 6: `07_ai_functions` — Free Edition Analytics and Optional AI
 # MAGIC
-# MAGIC **Location**: `/Users/lokeshchandra.kaikala@gmail.com/07_ai_functions`
-# MAGIC **Role**: Demonstrates Databricks SQL AI functions for healthcare use cases
+# MAGIC **Location**: `src/notebooks/07_ai_functions.py`.
+# MAGIC The executable notebook uses ordinary Spark SQL: KPI rollups, a 12-hour moving-average baseline, and aggregate keyword groups for synthetic chief complaints.
+# MAGIC These are deterministic demonstration heuristics, **not a foundation model, clinical classification, or validated forecasting**.
 # MAGIC
-# MAGIC ### What It Does
-# MAGIC Demonstrates four AI functions applicable to hospital operations:
+# MAGIC Databricks SQL `AI_CLASSIFY`, `AI_EXTRACT`, `AI_FORECAST` and `AI_QUERY` are optional ideas only. They are not executed by the core scheduled job and may require unavailable permissions, supported AI endpoints, quotas or previews in Free Edition.
+# MAGIC Do not present optional AI function availability or accuracy as verified until you actually run it in the specific Databricks workspace.
 # MAGIC
-# MAGIC 1. **`ai_classify`** ✅ — Classifies 50 chief complaints into categories:
-# MAGIC    - Cardiac, Respiratory, GI, Neuro, Trauma
-# MAGIC    - Uses SQL: `SELECT ai_classify(complaint_text, ARRAY[...]) FROM ...`
-# MAGIC
-# MAGIC 2. **`ai_extract`** ✅ (v2.1) — Extracts structured fields from clinical text:
-# MAGIC    - body_part, symptom, severity
-# MAGIC    - Uses JSON schema format with `ai_extract(text, schema_json)`
-# MAGIC
-# MAGIC 3. **`ai_forecast`** ⚠️ — Predicts 12-hour admission volume:
-# MAGIC    - Requires preview enablement (disabled in Free Edition)
-# MAGIC    - Uses `TABLE()` syntax with timestamp horizon
-# MAGIC
-# MAGIC 4. **`ai_query`** ❌ → Direct SQL — Natural language to SQL:
-# MAGIC    - AI endpoint required; replaced with direct SQL for Free Edition compatibility
-# MAGIC
-# MAGIC ### Key Design Decisions
-# MAGIC - **Free Edition compatible**: Uses only available AI functions; documents limitations
-# MAGIC - **Real healthcare use cases**: Classifications and extractions are clinically meaningful
-# MAGIC - **Tested with real data**: 50 rows for classify, 20 rows for extract
 
 # COMMAND ----------
 
