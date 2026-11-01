@@ -30,10 +30,10 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 
-def latest_per_patient(table_name, selected=None):
-    """Return the most recent record per patient_id using row_number window."""
+def latest_per_patient(table_name, selected=None, keys=("patient_id",)):
+    """Return the latest event for each key; optionally scope to an encounter."""
     df = spark.read.table(table_name)
-    w = Window.partitionBy("patient_id").orderBy(F.col("event_ts").desc(), F.col("event_id").desc())
+    w = Window.partitionBy(*keys).orderBy(F.col("event_ts").desc(), F.col("event_id").desc())
     out = df.withColumn("_rn", F.row_number().over(w)).where("_rn = 1").drop("_rn")
     return out.select(*selected) if selected else out
 
@@ -54,7 +54,7 @@ def gold_patient_360():
     vitals = latest_per_patient(
         "silver_vitals",
         [
-            "patient_id", F.col("event_ts").alias("latest_vital_ts"),
+            "patient_id", "encounter_id", F.col("event_ts").alias("latest_vital_ts"),
             F.col("heart_rate").alias("latest_heart_rate"),
             F.col("spo2").alias("latest_spo2"),
             F.col("systolic_bp").alias("latest_systolic_bp"),
@@ -62,19 +62,21 @@ def gold_patient_360():
             F.col("temperature_c").alias("latest_temperature_c"),
             F.col("operational_alert_flag").alias("latest_operational_alert_flag"),
         ],
+        keys=("patient_id", "encounter_id"),
     )
     complaints = latest_per_patient(
         "silver_chief_complaints",
-        ["patient_id", "chief_complaint_clean"],
+        ["patient_id", "encounter_id", "chief_complaint_clean"],
+        keys=("patient_id", "encounter_id"),
     )
-    location_window = Window.partitionBy("patient_id").orderBy(F.col("__START_AT").desc())
+    location_window = Window.partitionBy("patient_id", "encounter_id").orderBy(F.col("__START_AT").desc())
     location = (
         spark.read.table("silver_patient_location_history")
         .where(F.col("__END_AT").isNull())
         .withColumn("_rn", F.row_number().over(location_window))
         .where("_rn = 1")
         .select(
-            "patient_id",
+            "patient_id", "encounter_id",
             F.col("encounter_id").alias("location_encounter_id"),
             F.col("department").alias("current_department"),
             F.col("bed_id").alias("current_bed_id"),
@@ -84,9 +86,9 @@ def gold_patient_360():
     )
     return (
         triage
-        .join(vitals, "patient_id", "left")
-        .join(complaints, "patient_id", "left")
-        .join(location, "patient_id", "left")
+        .join(vitals, ["patient_id", "encounter_id"], "left")
+        .join(complaints, ["patient_id", "encounter_id"], "left")
+        .join(location, ["patient_id", "encounter_id"], "left")
         .withColumn("is_currently_admitted", F.coalesce(F.col("current_adt_event") != F.lit("A03_DISCHARGE"), F.lit(False)))
     )
 
@@ -126,11 +128,21 @@ def gold_department_hourly():
 # Note: These are synthetic operational thresholds, NOT clinical alerts.
 # ---------------------------------------------------------------------------
 
-@dp.materialized_view(name="gold_live_alerts", comment="Latest synthetic operational vital threshold alerts; not clinical alerts.")
+@dp.materialized_view(name="gold_live_alerts", comment="Latest alerts for currently admitted synthetic encounters; not clinical alerts.")
 def gold_live_alerts():
-    latest = latest_per_patient("silver_vitals")
+    latest = latest_per_patient(
+        "silver_vitals", keys=("patient_id", "encounter_id")
+    )
+    admitted = (
+        spark.read.table("gold_patient_360")
+        .select("patient_id", "encounter_id", "is_currently_admitted")
+    )
     return (
-        latest.where(F.col("operational_alert_flag") == True)
+        latest.join(admitted, ["patient_id", "encounter_id"], "inner")
+        .where(
+            (F.col("operational_alert_flag") == F.lit(True))
+            & (F.col("is_currently_admitted") == F.lit(True))
+        )
         .select(
             "patient_id", "encounter_id", "event_ts", "heart_rate", "spo2", "systolic_bp",
             "diastolic_bp", "temperature_c", "respiratory_rate", "fall_detected",
