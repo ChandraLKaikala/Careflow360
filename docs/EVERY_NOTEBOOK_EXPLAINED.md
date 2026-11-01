@@ -63,7 +63,7 @@ Creates business-ready materialized views for dashboards, Genie, ML training, an
 
 ### Key design decisions
 - **Materialized views** — Auto-refreshed by SDP pipeline
-- **Window functions** — `row_number() OVER (PARTITION BY patient_id ORDER BY event_ts DESC)`
+- **Window functions** — latest triage per `patient_id`; latest vitals, complaints and location per `(patient_id, encounter_id)` to prevent mixing data from separate visits. Current live alerts are restricted to the admitted patient's current encounter.
 - **Patient 360 assembly** — Joins latest triage + vitals + complaint + location
 
 ---
