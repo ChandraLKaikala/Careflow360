@@ -1,5 +1,14 @@
 # CareFlow360 Changelog
 
+## [2026-11-01] - Optional Command Center Quality and Performance
+
+- Added offline-tested app resource validation (three-part UC identifiers, SQL warehouse ID, HTTPS host).
+- Reworked the Streamlit dashboard with cached, time-bounded aggregate SQL, manual refresh, clearer freshness warnings and trend charts.
+- Isolated section-level query errors, retained diagnostic details in protected logs and added regression tests.
+- Documented cache duration, result limits, installation prerequisites and synthetic-only restrictions.
+- **Source changes only:** no Databricks App deployment or live end-to-end validation is implied.
+
+
 ## [2026-10-03] - Daily Incremental Pipeline & Project Optimization
 
 ### 🎯 Major Changes
