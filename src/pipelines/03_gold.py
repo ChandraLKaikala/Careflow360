@@ -15,9 +15,10 @@ Key outputs:
   - gold_live_alerts: Patients with active operational vital alerts
   - gold_triage_training: Curated feature table for ML model training
 
-Note: gold_triage_predictions and gold_policy_chunks are created by
-notebooks (04_train_triage_model, 05_create_policy_docs) as physical
-tables in the workspace.careflow360_gold presentation schema.
+Note: triage_predictions and policy_chunks are physical tables created
+by notebooks 04_train_triage_model and 05_create_policy_docs in the
+workspace.careflow360_gold presentation schema. The unified quickstart
+uses gold_triage_predictions and gold_policy_chunks instead.
 
 All pipeline tables are in the SDP working schema (careflow360_dab).
 Presentation views in workspace.careflow360_gold expose them to consumers.
