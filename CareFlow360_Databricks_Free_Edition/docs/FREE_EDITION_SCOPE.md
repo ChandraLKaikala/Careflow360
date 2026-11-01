@@ -37,7 +37,7 @@ At the time this project was assembled, Databricks Free Edition documents import
 This repository therefore:
 
 1. Uses serverless compute only.
-2. Keeps the main workflow to five tasks and makes most tasks sequential.
+2. Uses six dependent tasks, with at most two running in parallel; this fits the five-concurrent-task Free Edition limit.
 3. Uses one core Lakeflow pipeline.
 4. Keeps AI Search optional and uses one STANDARD endpoint with a triggered HYBRID index by default; the embedding model endpoint is configurable by workspace/region.
 5. Uses scale-to-zero where supported for optional serving resources.

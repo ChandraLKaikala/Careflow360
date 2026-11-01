@@ -7,6 +7,8 @@
 > an unbound DAB deploy can create duplicate jobs/pipelines in quota-limited Free Edition.
 > Keep this demo synthetic/public only — never load real patient PHI.
 
+**End-to-end output acceptance checklist:** [Live workspace verification and CI scope](docs/END_TO_END_VERIFICATION.md).
+
 
 ## Overview
 CareFlow360 is a **synthetic hospital operations analytics platform** built on Databricks, demonstrating an industry-ready medallion lakehouse architecture with ML predictions, AI functions, Genie natural-language Q&A, and a real-time command center dashboard.

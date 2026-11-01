@@ -1,103 +1,124 @@
 # Databricks notebook source
-# DBTITLE 1,AI Functions for Hospital Analytics
 # MAGIC %md
-# MAGIC # CareFlow360 AI Functions
-# MAGIC Demonstrates Databricks SQL AI functions for hospital analytics:
-# MAGIC - `ai_forecast` — Predict future patient volume by department
-# MAGIC - `ai_query` — Natural-language questions over the data
-# MAGIC - `ai_classify` — Classify chief complaints into categories
-# MAGIC
-# MAGIC **Note**: This is a synthetic/demo project. AI function outputs are not clinically validated.
+# MAGIC # CareFlow360 — Free Edition Analytics and Optional AI
+# MAGIC Every *executable* cell below uses standard Spark SQL and requires no model-serving endpoint.
+# MAGIC The baseline forecast and keyword groups are deterministic demos, **not** AI or clinical predictions.
+# MAGIC Optional AI functions can be tried separately where the workspace grants access.
+# MAGIC All examples use synthetic data. Do not use this project for clinical care.
 
 # COMMAND ----------
 
-# DBTITLE 1,Patient Volume Forecast
-catalog = "workspace"
-schema = "careflow360_gold"
-
-# Prepare historical hourly patient volume for forecasting
+# DBTITLE 1,Configuration and table contracts
+import re
 from pyspark.sql import functions as F
 
-hourly_volume = (spark.table(f"{catalog}.{schema}.department_hourly")
-    .filter(F.col("event_type") == "A01_ADMIT")
+
+def widget(name, default):
+    try:
+        dbutils.widgets.text(name, str(default), name)
+    except Exception:
+        pass
+    try:
+        return dbutils.widgets.get(name)
+    except Exception:
+        return str(default)
+
+
+catalog = widget("catalog", spark.sql("SELECT current_catalog() AS catalog").first()[0])
+gold_schema = widget("gold_schema", "careflow360_gold")
+silver_schema = widget("silver_schema", "careflow360_silver")
+for value in (catalog, gold_schema, silver_schema):
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+        raise ValueError(f"Unsafe Unity Catalog identifier: {value!r}")
+
+flow_table = f"{catalog}.{gold_schema}.department_hourly"
+patient_table = f"{catalog}.{gold_schema}.patient_360"
+complaint_table = f"{catalog}.{silver_schema}.chief_complaints"
+for name in (flow_table, patient_table, complaint_table):
+    if not spark.catalog.tableExists(name):
+        raise RuntimeError(f"Required presentation view not found: {name}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Hourly admission volume (historical observations)
+hourly_volume = (
+    spark.table(flow_table)
+    .filter(F.col("event_type") == F.lit("A01_ADMIT"))
     .groupBy("event_hour")
-    .agg(F.sum("patient_count").alias("y"))
-    .withColumnRenamed("event_hour", "ts")
-    .orderBy("ts"))
-
-# Save as a temp view for ai_forecast
-hourly_volume.createOrReplaceTempView("hourly_admission_volume")
-display(hourly_volume.limit(10))
-
-# COMMAND ----------
-
-# DBTITLE 1,Run ai_forecast
-# MAGIC %sql
-# MAGIC -- AI Forecast: Predict next 12 hours of admission volume
-# MAGIC -- Uses Databricks ai_forecast SQL function (Version 1)
-# MAGIC WITH forecast_input AS (
-# MAGIC   SELECT ts, y FROM hourly_admission_volume
-# MAGIC )
-# MAGIC SELECT * FROM AI_FORECAST(
-# MAGIC   TABLE(forecast_input),
-# MAGIC   horizon => (SELECT MAX(ts) + INTERVAL 12 HOURS FROM hourly_admission_volume),
-# MAGIC   time_col => 'ts',
-# MAGIC   value_col => 'y',
-# MAGIC   frequency => '1 hour',
-# MAGIC   version => '1'
-# MAGIC )
-# MAGIC ORDER BY ts;
+    .agg(F.sum("event_count").alias("admissions"))
+    .select(F.col("event_hour").alias("ts"), "admissions")
+    .orderBy("ts")
+)
+if hourly_volume.limit(1).count() == 0:
+    raise RuntimeError("No hourly admission records available. Run the pipeline first.")
+hourly_volume.createOrReplaceTempView("careflow_hourly_admissions")
+display(hourly_volume.orderBy(F.col("ts").desc()).limit(24))
 
 # COMMAND ----------
 
-# DBTITLE 1,AI Classify Chief Complaints
-# MAGIC %sql
-# MAGIC -- AI Classify: Categorize chief complaints into clinical categories
-# MAGIC -- Uses Databricks ai_classify SQL function
-# MAGIC SELECT
-# MAGIC   patient_id,
-# MAGIC   chief_complaint_clean,
-# MAGIC   AI_CLASSIFY(
-# MAGIC     chief_complaint_clean,
-# MAGIC     ARRAY('Cardiac', 'Respiratory', 'Gastrointestinal', 'Neurological', 'Trauma', 'Other')
-# MAGIC   ) AS complaint_category
-# MAGIC FROM workspace.careflow360_silver.chief_complaints
-# MAGIC LIMIT 50;
+# DBTITLE 1,12-hour moving-average *baseline* forecast (no AI endpoint required)
+# This produces a clearly labeled heuristic forecast, not a clinical forecast.
+forecast = spark.sql("""
+WITH last_hour AS (
+  SELECT MAX(ts) AS anchor FROM careflow_hourly_admissions
+), baseline AS (
+  SELECT ROUND(AVG(admissions), 2) AS estimated_admissions_per_hour
+  FROM careflow_hourly_admissions
+  WHERE ts >= (SELECT anchor - INTERVAL 5 HOURS FROM last_hour)
+), future_hours AS (
+  SELECT EXPLODE(SEQUENCE(anchor + INTERVAL 1 HOUR,
+                          anchor + INTERVAL 12 HOURS,
+                          INTERVAL 1 HOUR)) AS forecast_hour
+  FROM last_hour
+)
+SELECT f.forecast_hour, b.estimated_admissions_per_hour,
+       '6-hour observed moving-average baseline (synthetic demo)' AS method
+FROM future_hours f CROSS JOIN baseline b
+ORDER BY f.forecast_hour
+""")
+display(forecast)
 
 # COMMAND ----------
 
-# DBTITLE 1,AI Query Natural Language
-# MAGIC %sql
-# MAGIC -- Natural-language questions over hospital data
-# MAGIC -- ai_query requires a configured AI serving endpoint; here we answer with direct SQL
-# MAGIC -- on workspace.careflow360_gold.patient_360
-# MAGIC
-# MAGIC -- Q1: How many patients are currently admitted in the ICU?
-# MAGIC SELECT COUNT(*) AS icu_patient_count
-# MAGIC FROM workspace.careflow360_gold.patient_360
-# MAGIC WHERE is_currently_admitted AND current_department = 'ICU';
-# MAGIC
-# MAGIC -- Q2: What is the average triage acuity for admitted patients?
-# MAGIC SELECT ROUND(AVG(triage_acuity), 2) AS avg_triage_acuity
-# MAGIC FROM workspace.careflow360_gold.patient_360
-# MAGIC WHERE is_currently_admitted;
+# DBTITLE 1,Aggregate chief complaint keyword categories
+# This rule-based text categorization intentionally avoids patient-level output.
+categories = spark.sql(f"""
+WITH labeled AS (
+  SELECT CASE
+    WHEN LOWER(chief_complaint_clean) RLIKE 'chest|palpitation' THEN 'Cardiac-related keyword'
+    WHEN LOWER(chief_complaint_clean) RLIKE 'cough|breath' THEN 'Respiratory keyword'
+    WHEN LOWER(chief_complaint_clean) RLIKE 'abdominal|vomit|nausea' THEN 'Digestive keyword'
+    WHEN LOWER(chief_complaint_clean) RLIKE 'headache|dizz' THEN 'Neurological keyword'
+    WHEN LOWER(chief_complaint_clean) RLIKE 'injury|laceration|fall' THEN 'Injury keyword'
+    ELSE 'Other keyword' END AS keyword_group
+  FROM {complaint_table}
+)
+SELECT keyword_group, COUNT(*) AS complaint_records
+FROM labeled
+GROUP BY keyword_group
+ORDER BY complaint_records DESC
+""")
+display(categories)
 
 # COMMAND ----------
 
-# DBTITLE 1,AI Extract from Complaints
-# MAGIC %sql
-# MAGIC -- AI Extract: Pull structured data from chief complaint text
-# MAGIC -- Uses Databricks ai_extract SQL function with JSON schema (v2.1)
-# MAGIC SELECT
-# MAGIC   patient_id,
-# MAGIC   chief_complaint_clean,
-# MAGIC   AI_EXTRACT(
-# MAGIC     chief_complaint_clean,
-# MAGIC     '{"body_part": {"type": "string"}, "symptom": {"type": "string"}, "severity_hint": {"type": "string"}}',
-# MAGIC     MAP('version', '2.1')
-# MAGIC   ) AS extracted_info
-# MAGIC FROM workspace.careflow360_silver.chief_complaints
-# MAGIC LIMIT 20;
+# DBTITLE 1,Executive summary from current Patient 360
+kpis = spark.sql(f"""
+SELECT COUNT(*) AS patient_360_rows,
+       SUM(CASE WHEN is_currently_admitted THEN 1 ELSE 0 END) AS active_patients,
+       SUM(CASE WHEN is_currently_admitted AND current_department='ICU'
+                THEN 1 ELSE 0 END) AS icu_patients,
+       ROUND(AVG(CASE WHEN is_currently_admitted THEN triage_acuity END), 2) AS avg_active_triage_acuity
+FROM {patient_table}
+""")
+display(kpis)
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## Optional advanced AI features
+# MAGIC Databricks SQL `AI_CLASSIFY`, `AI_EXTRACT`, `AI_FORECAST` and `AI_QUERY`
+# MAGIC may require workspace-specific feature access or a serving endpoint.
+# MAGIC Enable them in a **separate** notebook after confirming availability.
+# MAGIC Do not interpret missing permissions as a core pipeline failure.
+# MAGIC Keep patient identifiers and row-level synthetic clinical observations out of published outputs.

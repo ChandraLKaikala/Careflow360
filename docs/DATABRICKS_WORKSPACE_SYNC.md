@@ -14,9 +14,10 @@ Use only synthetic or public non-PHI data in Databricks Free Edition.
 - Published AI/BI dashboard ID: `01f1beeb451e10439c0b4bf6aa8eeb70`.
 
 **Do not run `databricks bundle deploy` against this workspace without first reconciling the existing resources.**
-The repository DAB currently describes a *different logical job name*, and an unbound deploy could create a duplicate
-pipeline or job, violating Free Edition quotas. The 02:00 UTC schedule in the existing job is not encoded as a schedule
-in the current DAB file; Git pull alone does not change it.
+The repository DAB currently describes a *different logical job name* and a six-task DAG, whereas the existing
+workspace job has four tasks. An unbound deploy could create duplicate pipeline/job resources and exceed Free Edition
+quotas. The DAB now declares the **same 02:00 UTC cron schedule** with a single-run concurrency cap, but **Git pull alone
+will not update the existing job or activate that schedule**.
 
 ## Step 1 — Merge only after the pull request checks pass
 
@@ -90,7 +91,7 @@ the pipeline without understanding checkpoint/table effects.
 
 ## Verification boundaries
 
-- GitHub CI verifies syntax and repository consistency, **not** Spark runtime behavior.
+- GitHub CI now verifies Python source/cells, YAML, root/package mirrors, synthetic JSON event counts/unique IDs/timestamps, modeled ML feature/prediction shape, notebook output contracts and job dependencies, **not** actual Spark/Lakeflow or MLflow registry execution.
 - Current ChatGPT Databricks connection supports Genie read-only analysis and AI/BI dashboard
   APIs; it cannot update Jobs or workspace notebooks or initiate pipeline runs.
 - Full validation requires a successful controlled workspace run and comparison of resulting tables.

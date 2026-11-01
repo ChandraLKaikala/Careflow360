@@ -11,17 +11,17 @@ resources:
             "sample_questions": [
               {"id":"11111111111111111111111111111111","question":["How many patients are currently in the emergency department?"]},
               {"id":"22222222222222222222222222222222","question":["Which department currently has the most admitted patients?"]},
-              {"id":"33333333333333333333333333333333","question":["Show the latest synthetic operational alerts."]},
+              {"id":"33333333333333333333333333333333","question":["Show synthetic operational alert counts by hour and source (aggregates only)."]},
               {"id":"44444444444444444444444444444444","question":["Compare admissions, transfers and discharges by hour."]}
             ]
           },
           "data_sources": {
             "tables": [
-              {"identifier":"${var.catalog}.${var.schema}.gold_patient_360"},
-              {"identifier":"${var.catalog}.${var.schema}.gold_hospital_command_center"},
-              {"identifier":"${var.catalog}.${var.schema}.gold_department_hourly"},
-              {"identifier":"${var.catalog}.${var.schema}.gold_live_alerts"},
-              {"identifier":"${var.catalog}.${var.schema}.gold_triage_predictions"}
+              {"identifier":"${var.catalog}.${var.schema}.${var.table_prefix}patient_360"},
+              {"identifier":"${var.catalog}.${var.schema}.${var.table_prefix}hospital_command_center"},
+              {"identifier":"${var.catalog}.${var.schema}.${var.table_prefix}department_hourly"},
+              {"identifier":"${var.catalog}.${var.schema}.${var.table_prefix}live_alerts"},
+              {"identifier":"${var.catalog}.${var.schema}.${var.table_prefix}triage_predictions"}
             ]
           },
           "instructions": {
@@ -32,7 +32,7 @@ resources:
               },
               {
                 "id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "content":["A currently admitted patient is a row in gold_patient_360 where is_currently_admitted is true. Use current_department for current census questions. Operational alert flags are synthetic demonstration thresholds, not clinical alerts."]
+                "content":["A currently admitted patient is a row in the configured Patient 360 table where is_currently_admitted is true. Use current_department for current census questions. Operational alert flags are synthetic demonstration thresholds, not clinical alerts. Return aggregate counts only; never show patient identifiers, encounter identifiers, or vital-sign records."]
               }
             ]
           }

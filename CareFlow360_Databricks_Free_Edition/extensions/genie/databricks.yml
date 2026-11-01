@@ -9,7 +9,11 @@ variables:
   catalog:
     description: Existing CareFlow360 Unity Catalog catalog.
   schema:
-    default: careflow360_dev
+    description: Gold schema; for unified quickstart supply careflow360_dev.
+    default: careflow360_gold
+  table_prefix:
+    description: Empty for Gold presentation views; set gold_ for unified quickstart.
+    default: ""
   warehouse_id:
     description: ID of the existing Free Edition SQL warehouse.
 

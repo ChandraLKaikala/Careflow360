@@ -63,18 +63,31 @@ print("Writing events under:", events_root)
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
 spark.sql(f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{schema}`.`{volume}`")
 
+# Resetting landing files can invalidate Auto Loader state. A daily append job
+# must never delete previously ingested event files.
 if reset_events:
-    try:
-        dbutils.fs.rm(events_root, True)
-    except Exception:
-        pass
+    raise ValueError("reset_events=true is disabled: never delete an incremental landing volume")
+
+manifest_dir = f"{base}/manifests"
+dbutils.fs.mkdirs(manifest_dir)
+if any(entry.name == f"{run_id}.json" for entry in dbutils.fs.ls(manifest_dir)):
+    raise ValueError(f"Run ID {run_id!r} already exists; use a new run_id")
 
 for stream_name in ["adt", "triage", "vitals", "chief_complaints"]:
-    dbutils.fs.mkdirs(f"{events_root}/{stream_name}")
+    stream_dir = f"{events_root}/{stream_name}"
+    dbutils.fs.mkdirs(stream_dir)
+    # A prior interrupted run may have event files but no manifest. Do not
+    # overwrite paths that Auto Loader might have already checkpointed.
+    if any(x.name.startswith(f"batch_{run_id}_") for x in dbutils.fs.ls(stream_dir)):
+        raise ValueError(f"Partial run {run_id!r} already has {stream_name} files; investigate before replaying")
 
 random.seed(int(hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:16], 16))
 now = datetime.now(timezone.utc).replace(microsecond=0)
-base_time = now - timedelta(hours=8)
+# Leave enough lookback for all batches and discharge offsets. This makes
+# synthetic event timestamps historical, not accidentally future-dated.
+largest_batch = math.ceil(num_patients / num_batches)
+lookback_minutes = (num_batches - 1) * 10 + 480 + math.ceil(largest_batch * 7 / 60) + 2
+base_time = now - timedelta(minutes=lookback_minutes)
 
 FIRST_COMPLAINTS = [
     "chest discomfort and shortness of breath",
@@ -297,8 +310,7 @@ manifest = {
     "rows": summary,
     "disclaimer": "Synthetic portfolio data. Not clinically validated.",
 }
-dbutils.fs.mkdirs(f"{base}/manifests")
-dbutils.fs.put(f"{base}/manifests/{run_id}.json", json.dumps(manifest, indent=2), True)
+dbutils.fs.put(f"{manifest_dir}/{run_id}.json", json.dumps(manifest, indent=2), False)
 dbutils.fs.put(f"{base}/source_manifest.json", json.dumps(manifest, indent=2), True)
 
 print(json.dumps(manifest, indent=2))
