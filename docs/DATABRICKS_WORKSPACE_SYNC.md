@@ -35,6 +35,45 @@ update existing job definitions, or run a pipeline.
 Before changing any job task, save a copy of the current job settings and the pipeline settings.
 Never reset, truncate, full refresh, or delete the landing volume merely to apply this patch.
 
+## Recommended guarded in-place update for the existing scheduled job
+
+After pulling the latest GitHub `main` into your Databricks Git folder, open
+[`src/notebooks/08_upgrade_existing_daily_job.py`](../src/notebooks/08_upgrade_existing_daily_job.py)
+**inside that Git folder** and run all its cells.
+
+1. First leave the widgets at **`apply_changes=false`** and
+   **`verify_with_new_run=false`**. This is a read-only dry run: it checks
+   job ID `484367296292508`, the exact existing daily UTC schedule, pipeline
+   ID `dde7c33b-8715-4666-8f6b-ad2af0848966`, existing four task keys, and
+   the contents of all five latest source notebooks. If notebook paths cannot
+   be resolved automatically, supply the absolute workspace folder containing
+   these notebooks via `notebook_root`.
+2. Review the six planned tasks. Switch **`apply_changes=true`** and
+   **`verify_with_new_run=true`**, then run all cells again. This writes a
+   job-settings backup to the authenticated user's private Databricks workspace
+   folder, updates only the **existing** job (using `jobs.update`), preserves the
+   original schedule/pipeline ID, and triggers one supervised +100 synthetic
+   patient run.
+3. The final job task must validate **100 run-specific new patient IDs in Bronze
+   triage, Silver triage, Gold Patient 360, and predictions**. The helper also
+   compares the before/after Patient 360 counts and fails if the increase is
+   not exactly 100. For the previously observed 600-row baseline, **700 rows
+   is the expected result, not a guaranteed result**.
+4. If any preflight check fails, the helper must not update the job. If a
+   post-update or live data check fails, inspect the logged job/task outputs,
+   the saved backup, and pipeline errors. Never reset or full-refresh the
+   pipeline to force success.
+
+This notebook upgrades the current four-task job to the same *functional*
+six-task graph as GitHub, while retaining the live task keys
+(`generate_daily_patients`, `refresh_pipeline`,
+`create_presentation_views`, `train_ml_model`) and adding
+`create_policy_docs` and `validate_project`. Existing run histories,
+permissions, and the cron remain attached to the same job ID. The helper
+requires an authenticated user with permission to edit and run that job;
+no personal access token should be pasted into source code or chat.
+Its dry-run and offline tests are **not** an executed Databricks deployment.
+
 ## Step 3 — Preview/compare the bundle rather than blindly creating resources
 
 In a Databricks-enabled CLI session, from the repository root:

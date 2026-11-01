@@ -9,6 +9,8 @@
 
 **End-to-end output acceptance checklist:** [Live workspace verification and CI scope](docs/END_TO_END_VERIFICATION.md).
 
+**Update the existing scheduled Databricks job safely:** After pulling the newest GitHub `main` in your Databricks Git folder, run [`08_upgrade_existing_daily_job.py`](src/notebooks/08_upgrade_existing_daily_job.py) first in dry-run mode, then use the explicit apply + live-verification widgets. It updates job `484367296292508` in place, not by creating a duplicate. See the [step-by-step guarded job-update instructions](docs/DATABRICKS_WORKSPACE_SYNC.md#recommended-guarded-in-place-update-for-the-existing-scheduled-job). This has **not** been executed in the workspace from GitHub CI.
+
 
 ## Overview
 CareFlow360 is a **synthetic hospital operations analytics platform** built on Databricks, demonstrating an industry-ready medallion lakehouse architecture with ML predictions, AI functions, Genie natural-language Q&A, and a real-time command center dashboard.
