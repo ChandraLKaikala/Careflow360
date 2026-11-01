@@ -114,11 +114,13 @@ Portfolio/demo project. All data is synthetic.
 
 The [2026-10-03 changelog](CHANGELOG.md) documents a workspace-level daily job. **The current GitHub bundle does not define a schedule**, so confirm the job's actual schedule and state in Databricks rather than treating a historical job ID as proof of a running deployment.
 
-The bundle's `generate_sample_events` task now emits **100 new synthetic patients per invocation** in **2 micro-batches**, with `reset_events=false` explicitly set. Each run generates a unique run ID and uses it in patient and encounter identifiers, preventing new runs from overwriting landing data or reusing patient IDs. The pipeline refreshes data, recreates consumer views, updates policy documents, trains a demonstration model, and validates outputs.
+The bundle's `generate_sample_events` task now emits **100 new synthetic patients per invocation** in **2 micro-batches**, with `reset_events=false` explicitly set. Each run preserves its source manifest in `manifests/source_manifest_<run_id>.json` for traceability. Each run generates a unique run ID and uses it in patient and encounter identifiers, preventing new runs from overwriting landing data or reusing patient IDs. The pipeline refreshes data, recreates consumer views, updates policy documents, trains a demonstration model, and validates outputs.
 
 **Important operational distinctions:**
 - Bronze/Silver events and relevant Gold aggregations can increase or change after successful incremental runs. A one-row command-center snapshot does not append daily, and static policy chunks do not grow.
 - Historical source files created before this update may still use non-unique patient IDs. This fix prevents reuse in *new* runs; it does not rewrite historical Delta tables.
+- Patient 360 joins triage, vitals, complaint, and ADT records by **patient + encounter**, so multiple admissions cannot mix their attributes. Live alerts include **currently admitted encounters only**.
+- ML evaluation uses a patient-grouped holdout split to reduce evaluation leakage; reported quality metrics still measure synthetic data only.
 - This is a synthetic, non-clinical demo. Do not load real patient data or treat triage predictions as medical advice.
 - The pipeline requires serverless capacity and supported features in the target Free Edition workspace. The repository alone cannot verify a live Databricks deployment.
 
