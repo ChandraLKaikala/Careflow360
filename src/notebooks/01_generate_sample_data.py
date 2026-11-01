@@ -15,6 +15,7 @@ import math
 import random
 import re
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 
 # COMMAND ----------
@@ -35,8 +36,8 @@ volume = widget("volume", "landing")
 num_patients = int(widget("num_patients", "1200"))
 num_batches = int(widget("num_batches", "20"))
 seconds_between_batches = float(widget("seconds_between_batches", "0"))
-reset_events = widget("reset_events", "true").lower() == "true"
-run_id = widget("run_id", datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"))
+reset_events = widget("reset_events", "false").lower() == "true"
+run_id = widget("run_id", f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:8]}")
 
 identifier = re.compile(r"^[A-Za-z0-9_\-]+$")
 for label, value in [("catalog", catalog), ("schema", schema), ("volume", volume)]:
@@ -70,7 +71,7 @@ if reset_events:
 for stream_name in ["adt", "triage", "vitals", "chief_complaints"]:
     dbutils.fs.mkdirs(f"{events_root}/{stream_name}")
 
-random.seed(421360)
+random.seed(f"careflow360-{run_id}")
 now = datetime.now(timezone.utc).replace(microsecond=0)
 base_time = now - timedelta(hours=8)
 
@@ -147,7 +148,7 @@ def synthetic_triage(age):
 
 # COMMAND ----------
 
-patient_ids = [f"P{i:06d}" for i in range(1, num_patients + 1)]
+patient_ids = [f"P{run_id}-{i:06d}" for i in range(1, num_patients + 1)]
 per_batch = math.ceil(num_patients / num_batches)
 summary = {"triage": 0, "vitals": 0, "adt": 0, "chief_complaints": 0}
 
@@ -164,7 +165,7 @@ for batch_idx in range(num_batches):
     batch_anchor = base_time + timedelta(minutes=batch_idx * 10)
 
     for j, patient_id in enumerate(batch_patients):
-        encounter_id = f"E{int(patient_id[1:]):06d}-{run_id}-{batch_idx:03d}"
+        encounter_id = f"E{run_id}-{patient_id.rsplit('-', 1)[-1]}-{batch_idx:03d}"
         arrival = batch_anchor + timedelta(seconds=j * 7 + random.randint(0, 30))
         age = random.randint(1, 94)
         sex = random.choice(SEXES)
