@@ -54,6 +54,7 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 - **Target**: Synthetic acuity classes 1–5. No accuracy percentage is assumed: inspect the current MLflow run's measured held-out metrics.
 - **Registration**: Unity Catalog model under the configured Gold schema, typically `workspace.careflow360_gold.triage_acuity_model` with `Champion` alias
 - **Batch scoring**: scores only previously unseen current patient IDs and inserts them through a non-destructive Delta MERGE. Existing predictions are retained.
+- **Optional model comparison**: [`09_compare_free_edition_models.py`](src/notebooks/09_compare_free_edition_models.py) benchmarks majority-class, Logistic Regression, Random Forest, and histogram gradient boosting on distinct train/validation/test **patient groups**. It is a manual CPU-only experiment (2,000 rows by default), **does not register or promote models**, and is **not run by the daily job**. Compare validation macro-F1, held-out test macro-F1, and fit time before considering a model replacement. A larger model is not inherently better on synthetic tabular data.
 
 ### 3. Analytics and optional AI (`07_ai_functions.py`)
 - **Default, Free Edition-safe:** standard Spark SQL KPI queries, a clearly labeled moving-average baseline and aggregate complaint-keyword groups; no foundation-model endpoint required.
