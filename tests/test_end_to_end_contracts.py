@@ -57,6 +57,9 @@ class FakeFs:
         self.files[path] = content
         return True
 
+    def head(self, path, max_bytes=65536):
+        return self.files[path][:max_bytes]
+
     def rm(self, *args, **kwargs):
         self.rm_called = True
         raise AssertionError("Generated data must never be deleted by a daily run")
@@ -227,6 +230,10 @@ class PolicyOutputTests(unittest.TestCase):
                 self.options["mode"] = name
                 return self
 
+            def format(self, format_name):
+                self.options["format"] = format_name
+                return self
+
             def option(self, key, value):
                 self.options[key] = value
                 return self
@@ -245,6 +252,10 @@ class PolicyOutputTests(unittest.TestCase):
                 return len(self.rows)
 
         class PolicySpark(FakeSpark):
+            def __init__(self):
+                super().__init__()
+                self.catalog = types.SimpleNamespace(tableExists=lambda _: False)
+
             def createDataFrame(self, rows, columns):
                 self.frame = Frame(rows, columns)
                 return self.frame
@@ -254,6 +265,8 @@ class PolicyOutputTests(unittest.TestCase):
         execute_code(POLICY, spark, dbutils)
         frame = spark.frame
         self.assertEqual(frame.saved_table, "workspace.careflow360_gold.policy_chunks")
+        self.assertEqual(frame.write.options["mode"], "errorifexists")
+        self.assertEqual(frame.write.options["format"], "delta")
         self.assertGreaterEqual(frame.count(), 6)
         self.assertEqual(len(frame.rows), len({r[0] for r in frame.rows}))
         self.assertEqual({r[4] for r in frame.rows}, {"synthetic_demo_policy"})
