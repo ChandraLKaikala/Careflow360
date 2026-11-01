@@ -74,7 +74,12 @@ if any(entry.name == f"{run_id}.json" for entry in dbutils.fs.ls(manifest_dir)):
     raise ValueError(f"Run ID {run_id!r} already exists; use a new run_id")
 
 for stream_name in ["adt", "triage", "vitals", "chief_complaints"]:
-    dbutils.fs.mkdirs(f"{events_root}/{stream_name}")
+    stream_dir = f"{events_root}/{stream_name}"
+    dbutils.fs.mkdirs(stream_dir)
+    # A prior interrupted run may have event files but no manifest. Do not
+    # overwrite paths that Auto Loader might have already checkpointed.
+    if any(x.name.startswith(f"batch_{run_id}_") for x in dbutils.fs.ls(stream_dir)):
+        raise ValueError(f"Partial run {run_id!r} already has {stream_name} files; investigate before replaying")
 
 random.seed(int(hashlib.sha256(run_id.encode("utf-8")).hexdigest()[:16], 16))
 now = datetime.now(timezone.utc).replace(microsecond=0)
