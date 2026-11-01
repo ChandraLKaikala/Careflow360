@@ -54,8 +54,7 @@ After pulling the latest GitHub `main` into your Databricks Git folder, open
    folder, updates only the **existing** job (using `jobs.update`), preserves the
    original schedule/pipeline ID, and triggers one supervised +100 synthetic
    patient run.
-3. The final job task must validate **100 run-specific new patient IDs in Bronze
-   triage, Silver triage, Gold Patient 360, and predictions**. The helper also
+3. The final job task reads the **immutable run manifest**, checks its expected event counts and requires **100 distinct new patient IDs across all four event streams in both Bronze and Silver**, plus Gold Patient 360 and predictions (10 checks). The helper also
    compares the before/after Patient 360 counts and fails if the increase is
    not exactly 100. For the previously observed 600-row baseline, **700 rows
    is the expected result, not a guaranteed result**.
@@ -108,14 +107,13 @@ therefore become **650** after one successful controlled 50-patient append, not 
 The updated DAB daily generator receives `run_id: "{{job.run_id}}"` and publishes both
 `run_id` and `num_patients` as Databricks Job task values. The final validation task
 receives those exact values using dynamic references, then verifies the current run contributes
-exactly 50 (or 100 in scheduled production runs) new distinct patients in Bronze triage,
-Silver triage, Gold Patient 360 and Gold predictions. **Zero added patients causes a job failure**,
+the manifest-declared event counts for **triage, vitals, ADT and complaints** across Bronze and Silver, plus 50 (or 100 in scheduled production runs) new Patient 360 records and predictions. **Missing event streams or zero new patients cause a job failure**,
 not a green success. This requires deploying the newer six-task job (not just Git pulling).
 
 Then run the ML notebook on the Gold presentation schema, followed by `06_validate.py` with
 `layout=split`, `gold_schema=careflow360_gold`, `silver_schema=careflow360_silver`,
 `bronze_schema=careflow360_bronze`, `max_snapshot_age_hours=36`,
-`expected_run_id=<run_id from generated manifest>`, `expected_new_patients=50`.
+`schema=careflow360`, `landing_volume=landing`, `expected_run_id=<run_id from generated manifest>`, `expected_new_patients=50`. The validator then reads the immutable manifest to check every event stream.
 The prediction table must be `triage_predictions`, not `gold_triage_predictions`.
 
 The updated ML scorer uses an **insert-only Delta MERGE** by `patient_id` so old prediction
