@@ -88,7 +88,8 @@ class ModelOutputContractTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "no current patient"):
             guard(current.iloc[:0], 0)
         source = (ROOT / "src/notebooks/04_train_triage_model.py").read_text()
-        self.assertIn('df.join(current_keys, ["patient_id", "encounter_id"], "inner")', source)
+        self.assertIn('df.join(new_keys, ["patient_id", "encounter_id"], "inner")', source)
+        self.assertIn('current_keys.join(existing_ids, "patient_id", "left_anti")', source)
         self.assertIn('spark.table(current_patient_table)', source)
         self.assertIn('ensure_current_patient_coverage(score_pdf, current_patient_count)', source)
 
