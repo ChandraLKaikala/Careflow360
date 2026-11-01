@@ -6,7 +6,7 @@ This page distinguishes **offline source checks** from **actual Databricks works
 
 - Six-task source DAB DAG: generate synthetic events → refresh Lakeflow → create presentation views → (create policy docs + train triage model) → validate project.
 - One serverless Lakeflow ETL pipeline; Bronze, Silver, and Gold.
-- Physical outputs in the deployed Gold schema: `triage_predictions`, `gold_policy_chunks`; five Gold presentation views.
+- Physical outputs in the deployed Gold presentation schema: `triage_predictions`, `policy_chunks`; five Gold presentation views. In the unified quickstart schema the notebook outputs are named `gold_triage_predictions` and `gold_policy_chunks`.
 - Scheduled source DAB job: **02:00 UTC**, `max_concurrent_runs: 1`, triggered refresh (not continuous streaming).
 - Synthetic-only operational dashboard; no clinical use.
 
