@@ -97,6 +97,24 @@ if exists(gold_schema, "patient_360"):
     if duplicate_patients:
         failures.append(f"Patient 360 contains {duplicate_patients} duplicate patient IDs")
 
+if exists(gold_schema, "live_alerts") and exists(gold_schema, "patient_360"):
+    patient_360 = spark.table(f"{catalog}.{gold_schema}.patient_360").select(
+        "patient_id", "encounter_id", "is_currently_admitted"
+    )
+    alerts = spark.table(f"{catalog}.{gold_schema}.live_alerts")
+    invalid_alerts = (
+        alerts.join(patient_360, ["patient_id", "encounter_id"], "left")
+        .where(
+            F.col("is_currently_admitted").isNull()
+            | (F.col("is_currently_admitted") == F.lit(False))
+        )
+        .count()
+    )
+    if invalid_alerts:
+        failures.append(
+            f"Live alerts contain {invalid_alerts} rows without an active encounter"
+        )
+
 if exists(gold_schema, "triage_training") and exists(gold_schema, "triage_predictions"):
     training_n = counts[f"{catalog}.{gold_schema}.triage_training"]
     predictions_n = counts[f"{catalog}.{gold_schema}.triage_predictions"]
