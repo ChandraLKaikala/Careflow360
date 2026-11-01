@@ -1,6 +1,6 @@
 # CareFlow360 — Databricks Free Edition scope
 
-Validated against Databricks documentation on 2026-10-02.
+Reviewed against Databricks Free Edition documentation on 2026-11-01. Actual workspace quotas and feature access must be checked before relying on optional services.
 
 ## Core path used by this repository
 
