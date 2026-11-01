@@ -36,7 +36,7 @@ experiment_path = widget("experiment_path", f"/Workspace/Users/{spark.sql('SELEC
 model_name = widget("model_name", "triage_acuity_model")
 
 full_model_name = f"{catalog}.{schema}.{model_name}"
-source_table = f"{catalog}.{schema}.gold_triage_training"
+source_table = f"{catalog}.{schema}.triage_training"
 print("Training source:", source_table)
 print("Registered model:", full_model_name)
 
@@ -137,6 +137,6 @@ score_sdf = spark.createDataFrame(score_pdf)
     score_sdf.write
     .mode("overwrite")
     .option("overwriteSchema", "true")
-    .saveAsTable(f"{catalog}.{schema}.gold_triage_predictions")
+    .saveAsTable(f"{catalog}.{schema}.triage_predictions")
 )
-print("Wrote:", f"{catalog}.{schema}.gold_triage_predictions")
+print("Wrote:", f"{catalog}.{schema}.triage_predictions")
