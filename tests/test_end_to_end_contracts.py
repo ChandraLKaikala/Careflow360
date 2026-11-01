@@ -240,12 +240,30 @@ class PolicyOutputTests(unittest.TestCase):
         dbutils = FakeDbutils({"catalog": "workspace", "schema": "careflow360_gold"})
         execute_code(POLICY, spark, dbutils)
         frame = spark.frame
-        self.assertEqual(frame.saved_table, "workspace.careflow360_gold.gold_policy_chunks")
+        self.assertEqual(frame.saved_table, "workspace.careflow360_gold.policy_chunks")
         self.assertGreaterEqual(frame.count(), 6)
         self.assertEqual(len(frame.rows), len({r[0] for r in frame.rows}))
         self.assertEqual({r[4] for r in frame.rows}, {"synthetic_demo_policy"})
         self.assertTrue(all(r[3].strip() for r in frame.rows))
         self.assertTrue(any("delta.enableChangeDataFeed" in query for query in spark.statements))
+        # The standalone unified-schema quickstart must retain its legacy name.
+        unified = PolicySpark()
+        execute_code(POLICY, unified, FakeDbutils({
+            "catalog": "workspace", "schema": "careflow360_dev"
+        }))
+        self.assertEqual(unified.frame.saved_table, "workspace.careflow360_dev.gold_policy_chunks")
+        # An explicit override must work for arbitrary presentation schema names.
+        custom = PolicySpark()
+        execute_code(POLICY, custom, FakeDbutils({
+            "catalog": "workspace", "schema": "my_presentation",
+            "policy_table_name": "policy_chunks"
+        }))
+        self.assertEqual(custom.frame.saved_table, "workspace.my_presentation.policy_chunks")
+        with self.assertRaisesRegex(ValueError, "Unsafe policy_table_name"):
+            execute_code(POLICY, PolicySpark(), FakeDbutils({
+                "catalog": "workspace", "schema": "careflow360_gold",
+                "policy_table_name": "bad;DROP"
+            }))
 
 
 class OptionalExtensionContractTests(unittest.TestCase):
@@ -262,6 +280,11 @@ class OptionalExtensionContractTests(unittest.TestCase):
         for extension in ("ai_search", "model_serving"):
             bundle = yaml.safe_load((ext / extension / "databricks.yml").read_text())
             self.assertEqual(bundle["variables"]["schema"]["default"], "careflow360_gold")
+        search_bundle = yaml.safe_load((ext / "ai_search/databricks.yml").read_text())
+        self.assertEqual(search_bundle["variables"]["table_prefix"]["default"], "")
+        search_resource = (ext / "ai_search/resources/ai_search.yml").read_text()
+        self.assertIn("${var.schema}.${var.table_prefix}policy_chunks", search_resource)
+        self.assertNotIn("${var.schema}.gold_policy_chunks", search_resource)
         genie = yaml.safe_load((ext / "genie/resources/genie.yml").read_text())
         serialized = json.loads(genie["resources"]["genie_spaces"]["careflow_genie"]["serialized_space"])
         self.assertEqual(len(serialized["data_sources"]["tables"]), 5)
@@ -302,6 +325,8 @@ class BundleContractTests(unittest.TestCase):
                 self.assertTrue(path.is_file(), f"Notebook missing for {key}: {path}")
             if "pipeline_task" in task:
                 self.assertEqual(task["pipeline_task"].get("full_refresh"), False)
+        policy_params = by_key["create_policy_docs"]["notebook_task"]["base_parameters"]
+        self.assertEqual(policy_params["policy_table_name"], "policy_chunks")
         params = by_key["generate_sample_events"]["notebook_task"]["base_parameters"]
         self.assertEqual(params["reset_events"], "false")
         self.assertEqual(params["num_patients"], "100")
