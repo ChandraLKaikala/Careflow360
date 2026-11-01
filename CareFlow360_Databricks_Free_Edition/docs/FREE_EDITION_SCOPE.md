@@ -39,12 +39,16 @@ This repository therefore:
 1. Uses serverless compute only.
 2. Uses six dependent tasks, with at most two running in parallel; this fits the five-concurrent-task Free Edition limit.
 3. Uses one core Lakeflow pipeline.
-4. Trains a CPU Random Forest on at most 4,000 historical encounters by default; inserts predictions for new patient IDs only.
-5. Provides an optional, **manual** 2,000-row model comparison of Logistic Regression, Random Forest and histogram gradient boosting with a patient-disjoint train/validation/test split; never automatically registers or promotes a candidate.
+4. Trains a CPU Random Forest on at most 4,000 projected synthetic encounters; requires held-out improvement over the dummy baseline before registration/promotion. Scores unseen current patients in memory and inserts only new predictions.
+5. Provides an optional, **manual** 2,000-row CPU comparison of Logistic Regression, Random Forest, Extra Trees and histogram gradient boosting against a majority-class baseline, using patient-disjoint train/validation/test groups; never automatically registers or promotes a candidate.
 6. Joins current Patient 360 vitals, complaints and location by both patient ID and encounter ID, avoiding contamination across revisits.
 7. Keeps AI Search optional and uses one STANDARD endpoint with a triggered HYBRID index by default; the embedding model endpoint is configurable by workspace/region.
 8. Uses scale-to-zero where supported for optional serving resources.
 9. Keeps Lakebase/App/Genie/Serving as separate bundles you can deploy only when needed.
+
+## Reviewed notebook and pipeline implementation
+
+See [the source-by-source Free Edition audit](../../docs/FREE_EDITION_NOTEBOOK_AUDIT.md). Offline checks do not verify whether the existing Databricks pipeline checkpoints can safely adopt a different stateful deduplication operator. Such a migration must be tested separately; do not reset state or full-refresh the production-like demo solely for optimization.
 
 ## Not a production compliance environment
 
