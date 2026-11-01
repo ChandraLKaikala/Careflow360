@@ -43,12 +43,17 @@ unified_source = f"{catalog}.{schema}.gold_triage_training"
 if spark.catalog.tableExists(presentation_source):
     source_table = presentation_source
     prediction_table = f"{catalog}.{schema}.triage_predictions"
+    current_patient_table = f"{catalog}.{schema}.patient_360"
 elif spark.catalog.tableExists(unified_source):
     source_table = unified_source
     prediction_table = f"{catalog}.{schema}.gold_triage_predictions"
+    current_patient_table = f"{catalog}.{schema}.gold_patient_360"
 else:
     raise RuntimeError(f"Missing training source: {presentation_source} or {unified_source}")
+if not spark.catalog.tableExists(current_patient_table):
+    raise RuntimeError(f"Current-patient scoring table is missing: {current_patient_table}")
 print("Training source:", source_table)
+print("Current-patient scoring source:", current_patient_table)
 print("Registered model:", full_model_name)
 
 # COMMAND ----------
@@ -148,9 +153,39 @@ print(f"Registered version {registered.version}; alias Champion set")
 
 # COMMAND ----------
 
-# Batch scoring demonstration. Keeps the project useful even when a serving endpoint quota is unavailable.
+# Batch scoring outputs one prediction per *current patient*, not every historical
+# training encounter. Keep the full encounter history available for training.
+def ensure_current_patient_coverage(scored, patient_count):
+    if patient_count < 1:
+        raise RuntimeError("Patient 360 has no current patient records to score")
+    if len(scored) != patient_count:
+        raise RuntimeError(
+            f"Expected {patient_count} current patients, but matched {len(scored)} "
+            "training rows. Investigate missing/duplicate encounter keys."
+        )
+    if scored["patient_id"].isna().any() or scored["encounter_id"].isna().any():
+        raise RuntimeError("Scoring rows have null patient or encounter IDs")
+    if scored["patient_id"].duplicated().any():
+        raise RuntimeError("Scoring rows contain duplicate current patient IDs")
+
+
+current_keys = (
+    spark.table(current_patient_table)
+    .select("patient_id", "encounter_id")
+    .dropDuplicates()
+)
+current_patient_count = current_keys.count()
+if current_patient_count > max_local_rows:
+    raise RuntimeError(
+        f"Current patient count {current_patient_count} exceeds max_local_rows="
+        f"{max_local_rows}; use distributed scoring instead of collecting more rows."
+    )
+# Join in Spark so the 2,800 historical training encounters are not all published
+# as 2,800 simultaneous current patient predictions.
+score_src = df.join(current_keys, ["patient_id", "encounter_id"], "inner")
+score_pdf = score_src.select("patient_id", "encounter_id", *features).limit(max_local_rows + 1).toPandas()
+ensure_current_patient_coverage(score_pdf, current_patient_count)
 loaded = mlflow.pyfunc.load_model(f"models:/{full_model_name}@Champion")
-score_pdf = pdf[["patient_id", "encounter_id"] + features].copy()
 score_pdf["predicted_triage_acuity"] = loaded.predict(score_pdf[features]).astype(int)
 score_sdf = spark.createDataFrame(score_pdf)
 (
