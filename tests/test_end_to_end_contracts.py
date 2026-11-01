@@ -259,6 +259,9 @@ class OptionalExtensionContractTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertIn("${var.table_prefix}patient_360", text)
             self.assertNotIn("${var.schema}.gold_patient_360", text)
+        for extension in ("ai_search", "model_serving"):
+            bundle = yaml.safe_load((ext / extension / "databricks.yml").read_text())
+            self.assertEqual(bundle["variables"]["schema"]["default"], "careflow360_gold")
         genie = yaml.safe_load((ext / "genie/resources/genie.yml").read_text())
         serialized = json.loads(genie["resources"]["genie_spaces"]["careflow_genie"]["serialized_space"])
         self.assertEqual(len(serialized["data_sources"]["tables"]), 5)
