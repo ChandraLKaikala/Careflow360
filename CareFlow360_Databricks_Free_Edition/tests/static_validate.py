@@ -51,6 +51,8 @@ def check_mirrors():
         "src/notebooks/00_preflight.py", "src/notebooks/01_generate_sample_data.py",
         "src/notebooks/03_create_views.py", "src/notebooks/04_train_triage_model.py",
         "src/notebooks/05_create_policy_docs.py", "src/notebooks/06_validate.py",
+        "src/notebooks/08_upgrade_existing_daily_job.py",
+        "src/notebooks/09_compare_free_edition_models.py",
         "src/pipelines/01_bronze.py", "src/pipelines/02_silver.py",
         "src/pipelines/03_gold.py",
     ]
