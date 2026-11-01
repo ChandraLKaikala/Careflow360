@@ -55,6 +55,7 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${resources.schemas.gold_schema.name}
+              policy_table_name: "policy_chunks"
 
         - task_key: train_triage_model
           depends_on:
