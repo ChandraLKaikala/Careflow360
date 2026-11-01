@@ -133,7 +133,7 @@ Portfolio/demo project. All data is synthetic.
 - **Unique keys:** `P<job_run_id>-<patient_number>` for every new batch, preventing reuse of legacy patient IDs
 - **Ingestion:** append-only JSON landing files; Bronze and Silver retain events; Patient 360 materialized view gains a row for every unseen patient ID
 - **ML predictions:** insert-only Delta MERGE, preserving existing patient predictions and inserting one for each new patient
-- **Validation:** the six-task GitHub job checks its own run ID and fails unless 100 new patients appear in Bronze/Silver/Gold and the predictions table
+- **Validation:** the six-task GitHub job reads the immutable per-run manifest, verifies every event stream's row counts through Bronze and Silver and requires 100 new patients in Gold Patient 360 and predictions
 
 **Known live baseline:** 600 unique patients as measured on November 1, 2026. A properly deployed and validated 100-patient scheduled run should produce **700 patients**, then **800 after a second distinct run**. This is an *expected acceptance test*, not a claim that the existing workspace has been upgraded or that each scheduled run always fires.
 
