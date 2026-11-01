@@ -82,6 +82,8 @@ resources:
             notebook_path: ../src/notebooks/06_validate.py
             base_parameters:
               catalog: ${var.catalog}
+              schema: ${resources.schemas.pipeline_schema.name}
+              landing_volume: ${resources.volumes.landing_volume.name}
               bronze_schema: ${resources.schemas.bronze_schema.name}
               silver_schema: ${resources.schemas.silver_schema.name}
               gold_schema: ${resources.schemas.gold_schema.name}
