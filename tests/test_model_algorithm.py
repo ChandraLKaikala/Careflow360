@@ -51,6 +51,20 @@ def scoring_coverage_guard():
     return namespace["ensure_current_patient_coverage"]
 
 
+def model_hyperparameters():
+    """Keep the offline scikit-learn smoke test tied to production model source."""
+    source = ROOT / "src/notebooks/04_train_triage_model.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    model_calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "RandomForestClassifier"
+    ]
+    assert len(model_calls) == 1
+    return {kw.arg: ast.literal_eval(kw.value) for kw in model_calls[0].keywords}
+
+
 class ModelOutputContractTests(unittest.TestCase):
     def test_current_patient_scoring_coverage_and_uniqueness(self):
         guard = scoring_coverage_guard()
@@ -108,11 +122,11 @@ class ModelOutputContractTests(unittest.TestCase):
         ])
         model = Pipeline([
             ("preprocessor", pre),
-            ("model", RandomForestClassifier(
-                n_estimators=160, max_depth=12, min_samples_leaf=2,
-                random_state=42, class_weight="balanced_subsample", n_jobs=1,
-            )),
+            ("model", RandomForestClassifier(**model_hyperparameters())),
         ])
+        params = model_hyperparameters()
+        self.assertEqual(params["n_estimators"], 96)
+        self.assertEqual(params["n_jobs"], 2)
         model.fit(X_train, y_train)
         predictions = model.predict(X_test)
         self.assertEqual(len(predictions), len(X_test))
