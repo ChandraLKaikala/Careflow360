@@ -11,6 +11,9 @@ variables:
   schema:
     description: Deployed Gold schema containing policy chunks and registered models.
     default: careflow360_gold
+  table_prefix:
+    description: Empty for the Gold presentation schema; use gold_ for unified quickstart.
+    default: ""
   embedding_model_endpoint:
     description: Databricks-hosted embedding endpoint/model service available in this workspace.
     default: databricks-qwen3-embedding-0-6b
