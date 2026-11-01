@@ -2,7 +2,7 @@
 # MAGIC %md
 # MAGIC # Optional CPU model comparison — Databricks Free Edition
 # MAGIC Compares majority-class baseline, Logistic Regression, Random Forest,
-# MAGIC and histogram gradient boosting on SYNTHETIC encounters.
+# MAGIC Extra Trees and histogram gradient boosting on SYNTHETIC encounters.
 # MAGIC The chosen model is evaluated once on untouched *patient groups*.
 # MAGIC This experiment does NOT deploy/register/promote a model and is NOT
 # MAGIC part of the daily scheduled job (to preserve Free Edition quota).
@@ -17,7 +17,7 @@ import pandas as pd
 from pyspark.sql import functions as F
 from sklearn.compose import ColumnTransformer
 from sklearn.dummy import DummyClassifier
-from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import balanced_accuracy_score, f1_score
@@ -97,6 +97,11 @@ def three_way_patient_split(X, y, groups):
         raise AssertionError("Patient identity leaked across splits")
     if y.iloc[train_idx].nunique() < 2:
         raise ValueError("Training group split has fewer than two labels")
+    if y.iloc[validation_idx].nunique() < 2 or y.iloc[test_idx].nunique() < 2:
+        raise ValueError(
+            "Validation/test groups have fewer than two labels; "
+            "increase the sample or review synthetic class coverage"
+        )
     return train_idx, validation_idx, test_idx
 
 
@@ -135,6 +140,13 @@ def candidate_models():
             ("model", RandomForestClassifier(
                 n_estimators=96, max_depth=12, min_samples_leaf=2,
                 random_state=42, class_weight="balanced_subsample", n_jobs=2,
+            )),
+        ]),
+        "extra_trees": Pipeline([
+            ("preprocessor", preprocessing()),
+            ("model", ExtraTreesClassifier(
+                n_estimators=80, max_depth=12, min_samples_leaf=2,
+                random_state=42, class_weight="balanced", n_jobs=2,
             )),
         ]),
         "hist_gradient_boosting": Pipeline([
@@ -179,10 +191,17 @@ for name, estimator in candidate_models().items():
 candidates = [r for r in results if r["model"] != "majority_class_baseline"]
 chosen = max(candidates, key=lambda r: (r["validation_macro_f1"], -r["training_seconds"]))
 test_score = measure(fitted[chosen["model"]], X_test, y_test)
+baseline_test_score = measure(baseline, X_test, y_test)
+better_than_baseline = (
+    chosen["validation_macro_f1"] > baseline_score["macro_f1"]
+    and chosen["validation_balanced_accuracy"] >= baseline_score["balanced_accuracy"]
+)
 print("Model comparison (synthetic, patient-disjoint validation):")
 display(pd.DataFrame(results).sort_values("validation_macro_f1", ascending=False))
 print("Chosen on validation:", chosen["model"], "held-out test metrics:", test_score)
-print("Baseline validation:", baseline_score)
+print("Baseline validation:", baseline_score, "baseline test:", baseline_test_score)
+if not better_than_baseline:
+    print("WARNING: The selected candidate did not beat the majority baseline on validation.")
 print("Do not promote this comparison model without a separate runtime review.")
 
 # COMMAND ----------
@@ -195,12 +214,16 @@ with mlflow.start_run(run_name="careflow360-free-edition-comparison"):
         "selection": "validation_macro_f1_patient_disjoint",
         "max_local_rows": max_local_rows,
         "chosen_candidate": chosen["model"],
+        "beats_validation_dummy": str(better_than_baseline).lower(),
         "model_registration": "none",
     })
     mlflow.log_metrics({
         "test_macro_f1": test_score["macro_f1"],
         "test_balanced_accuracy": test_score["balanced_accuracy"],
+        "test_dummy_macro_f1": baseline_test_score["macro_f1"],
+        "test_dummy_balanced_accuracy": baseline_test_score["balanced_accuracy"],
         "validation_dummy_macro_f1": baseline_score["macro_f1"],
+        "validation_dummy_balanced_accuracy": baseline_score["balanced_accuracy"],
         **{f"validation_{r['model']}_macro_f1": r["validation_macro_f1"]
            for r in candidates},
     })
