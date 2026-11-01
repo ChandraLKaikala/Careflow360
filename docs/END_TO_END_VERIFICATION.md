@@ -28,7 +28,7 @@ Required test categories:
 5. Presentation views: expected 15 views target the correct pipeline source names, with invalid Unity Catalog identifiers rejected.
 6. Gold pipeline graph: all table dependencies exist; exactly 15 declared datasets including CDC SCD Type 2.
 7. Policy documents: only fabricated synthetic policy chunks with unique chunk IDs; table write and Delta CDF property are attempted.
-8. Model algorithm: synthetic feature schema matches the ML notebook; a local scikit-learn model fits and emits valid 1–5 predictions on held-out examples. This is not MLflow registry testing.
+8. Model algorithm: synthetic feature schema matches the ML notebook; a local scikit-learn model fits and emits valid 1–5 predictions on held-out examples, and current-patient scoring rejects duplicate IDs, missing encounter keys, and incomplete coverage. This is not MLflow registry testing.
 9. Job and extensions: six task keys, valid dependency references, 02:00 UTC cron, single-run concurrency, no full refresh; optional app/Genie/Search/Serving default to deployed Gold presentation schema; dashboard query examples are aggregated.
 
 **Not proven by CI:** actual Databricks SQL parsing and output values for every query; Auto Loader checkpoint behavior; live CDC/SCD2 history; MLflow registration and Champion alias; permissions; production job scheduling; dashboard visual rendering; account compute quota.
@@ -67,11 +67,20 @@ Record these results and the exact UTC query time.
 3. Run **the existing** serverless pipeline with an incremental refresh, **not full refresh**.
 4. Run `03_create_views.py`, `05_create_policy_docs.py`, `04_train_triage_model.py` with `schema=careflow360_gold`, then `06_validate.py` with `layout=split` and a 36-hour freshness threshold.
 5. Rerun the baseline queries and verify new distinct Patient 360 records increased by 50 if all 50 new patients pass pipeline quality checks; if not, inspect quarantines and data-quality metrics.
-6. Check the Gold snapshot timestamp moved forward and prediction rows/labels reflect the latest scoring run. All `predicted_triage_acuity` values must be integers 1–5.
+6. Check the Gold snapshot timestamp moved forward. Training is encounter-level, but the batch predictions table must contain **one latest-encounter prediction per current Patient 360 patient**; all predicted acuities must be integers 1–5. Preserve historical training examples, not duplicate published current-patient predictions.
 
 ### Post-run query acceptance checks
 
 ```sql
+SELECT COUNT(*) AS scored_rows,
+       COUNT(DISTINCT patient_id) AS distinct_scored_patients,
+       COUNT(DISTINCT encounter_id) AS distinct_scored_encounters
+FROM workspace.careflow360_gold.triage_predictions;
+
+SELECT COUNT(*) AS training_encounter_rows,
+       COUNT(DISTINCT patient_id) AS historical_patients
+FROM workspace.careflow360_gold.triage_training;
+
 SELECT COUNT(*) AS invalid_labels
 FROM workspace.careflow360_gold.triage_predictions
 WHERE predicted_triage_acuity IS NULL
@@ -86,7 +95,7 @@ FROM workspace.careflow360_gold.patient_360
 WHERE is_currently_admitted AND current_department IS NULL;
 ```
 
-Expected: zero invalid labels, one Patient 360 row per distinct patient, zero admitted patients without a department. Any unexpected outcome is a failure to investigate, not a reason to reset existing data.
+Expected: zero invalid labels, **scored_rows = distinct_scored_patients = Patient 360 patient_rows**, one Patient 360 row per distinct patient, zero admitted patients without a department. Training rows can legitimately exceed the current-patient count because they cover historical encounters. Any unexpected outcome is a failure to investigate, not a reason to reset existing data.
 
 ### Scheduled refresh and dashboard
 
