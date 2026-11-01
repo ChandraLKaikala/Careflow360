@@ -1,0 +1,31 @@
+resources:
+  apps:
+    careflow_command_center:
+      name: careflow360-command-center
+      description: Streamlit hospital operations command center over synthetic CareFlow360 Gold tables.
+      source_code_path: ../src
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+        - name: command-center-table
+          uc_securable:
+            securable_type: TABLE
+            securable_full_name: ${var.catalog}.${var.schema}.gold_hospital_command_center
+            permission: SELECT
+        - name: patient-360-table
+          uc_securable:
+            securable_type: TABLE
+            securable_full_name: ${var.catalog}.${var.schema}.gold_patient_360
+            permission: SELECT
+        - name: alerts-table
+          uc_securable:
+            securable_type: TABLE
+            securable_full_name: ${var.catalog}.${var.schema}.gold_live_alerts
+            permission: SELECT
+        - name: flow-table
+          uc_securable:
+            securable_type: TABLE
+            securable_full_name: ${var.catalog}.${var.schema}.gold_department_hourly
+            permission: SELECT

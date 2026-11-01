@@ -1,0 +1,19 @@
+bundle:
+  name: careflow360-genie
+  engine: direct
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Existing CareFlow360 Unity Catalog catalog.
+  schema:
+    default: careflow360_dev
+  warehouse_id:
+    description: ID of the existing Free Edition SQL warehouse.
+
+targets:
+  dev:
+    default: true
+    mode: development

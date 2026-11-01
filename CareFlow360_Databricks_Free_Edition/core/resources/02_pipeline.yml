@@ -1,0 +1,21 @@
+resources:
+  pipelines:
+    hospital_pipeline:
+      name: careflow360-hospital-pipeline
+      catalog: ${var.catalog}
+      schema: ${resources.schemas.pipeline_schema.name}
+      serverless: true
+      continuous: false
+      development: true
+      channel: CURRENT
+      libraries:
+        - glob:
+            include: ../src/pipelines/**
+      configuration:
+        careflow.catalog: ${var.catalog}
+        careflow.schema: ${resources.schemas.pipeline_schema.name}
+        careflow.landing_volume: ${resources.volumes.landing_volume.name}
+      tags:
+        project: careflow360
+        domain: healthcare
+        data_classification: synthetic

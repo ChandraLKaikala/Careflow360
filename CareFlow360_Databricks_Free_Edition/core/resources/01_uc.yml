@@ -1,0 +1,31 @@
+resources:
+  schemas:
+    bronze_schema:
+      name: careflow360_bronze
+      catalog_name: ${var.catalog}
+      comment: Bronze layer - raw ingested hospital events from Auto Loader. Append-only, schema-enforced, DQ-gated.
+    silver_schema:
+      name: careflow360_silver
+      catalog_name: ${var.catalog}
+      comment: Silver layer - cleansed, deduplicated, enriched, and SCD2-tracked hospital events.
+    gold_schema:
+      name: careflow360_gold
+      catalog_name: ${var.catalog}
+      comment: Gold layer - analytics-ready aggregates, patient 360, ML features/predictions, and policy docs.
+    pipeline_schema:
+      name: ${var.schema}
+      catalog_name: ${var.catalog}
+      comment: CareFlow360 SDP pipeline working schema (internal). Bronze/silver/gold views expose data to consumers.
+
+  volumes:
+    landing_volume:
+      name: ${var.landing_volume}
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.pipeline_schema.name}
+      volume_type: MANAGED
+      comment: Landing and replay area for CareFlow360 public/synthetic hospital events.
+
+  experiments:
+    triage_experiment:
+      name: /Workspace/Users/${workspace.current_user.userName}/careflow360/triage_experiment
+      description: MLflow experiment for CareFlow360 synthetic ED triage classification.

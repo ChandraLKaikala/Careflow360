@@ -1,0 +1,21 @@
+bundle:
+  name: careflow360-model-serving
+  engine: direct
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Existing CareFlow360 Unity Catalog catalog.
+  schema:
+    default: careflow360_dev
+  model_name:
+    default: triage_acuity_model
+  model_version:
+    description: Numeric Unity Catalog model version registered by 04_train_triage_model.py.
+
+targets:
+  dev:
+    default: true
+    mode: development

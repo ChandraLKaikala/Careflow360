@@ -1,0 +1,25 @@
+resources:
+  vector_search_endpoints:
+    careflow_ai_search_endpoint:
+      name: careflow360-ai-search
+      endpoint_type: STANDARD
+
+  vector_search_indexes:
+    careflow_policy_index:
+      name: ${var.catalog}.${var.schema}.careflow_policy_search
+      endpoint_name: ${resources.vector_search_endpoints.careflow_ai_search_endpoint.name}
+      primary_key: chunk_id
+      index_type: DELTA_SYNC
+      index_subtype: HYBRID
+      delta_sync_index_spec:
+        source_table: ${var.catalog}.${var.schema}.gold_policy_chunks
+        pipeline_type: TRIGGERED
+        columns_to_sync:
+          - chunk_id
+          - document_id
+          - title
+          - text
+          - source
+        embedding_source_columns:
+          - name: text
+            embedding_model_endpoint_name: ${var.embedding_model_endpoint}

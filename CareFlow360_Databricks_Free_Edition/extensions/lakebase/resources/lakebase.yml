@@ -1,0 +1,35 @@
+resources:
+  postgres_projects:
+    careflow_project:
+      project_id: careflow360
+      display_name: CareFlow360 Operational State
+      pg_version: 17
+      history_retention_duration: 604800s
+
+  postgres_branches:
+    main:
+      parent: ${resources.postgres_projects.careflow_project.id}
+      branch_id: main
+      no_expiry: true
+
+  postgres_roles:
+    app_owner:
+      parent: ${resources.postgres_branches.main.id}
+      role_id: app-owner
+      postgres_role: careflow_app_owner
+
+  postgres_databases:
+    app_database:
+      parent: ${resources.postgres_branches.main.id}
+      database_id: careflow-app
+      postgres_database: careflow_app
+      role: ${resources.postgres_roles.app_owner.id}
+
+  postgres_endpoints:
+    primary:
+      parent: ${resources.postgres_branches.main.id}
+      endpoint_id: primary
+      endpoint_type: ENDPOINT_TYPE_READ_WRITE
+      autoscaling_limit_min_cu: 0.5
+      autoscaling_limit_max_cu: 1
+      suspend_timeout_duration: 300s

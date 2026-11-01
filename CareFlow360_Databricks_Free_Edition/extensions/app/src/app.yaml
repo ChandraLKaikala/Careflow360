@@ -1,0 +1,12 @@
+command: ['streamlit', 'run', 'app.py']
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: COMMAND_CENTER_TABLE
+    valueFrom: command-center-table
+  - name: PATIENT_360_TABLE
+    valueFrom: patient-360-table
+  - name: ALERTS_TABLE
+    valueFrom: alerts-table
+  - name: FLOW_TABLE
+    valueFrom: flow-table

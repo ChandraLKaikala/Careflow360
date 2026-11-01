@@ -1,0 +1,24 @@
+# Optional Preview replacement for resources/ai_search.yml.
+# Dedicated FULL_TEXT indexes require a STORAGE_OPTIMIZED endpoint and TRIGGERED sync.
+resources:
+  vector_search_endpoints:
+    careflow_ai_search_endpoint:
+      name: careflow360-ai-search
+      endpoint_type: STORAGE_OPTIMIZED
+
+  vector_search_indexes:
+    careflow_policy_index:
+      name: ${var.catalog}.${var.schema}.careflow_policy_search
+      endpoint_name: ${resources.vector_search_endpoints.careflow_ai_search_endpoint.name}
+      primary_key: chunk_id
+      index_type: DELTA_SYNC
+      index_subtype: FULL_TEXT
+      delta_sync_index_spec:
+        source_table: ${var.catalog}.${var.schema}.gold_policy_chunks
+        pipeline_type: TRIGGERED
+        columns_to_sync:
+          - chunk_id
+          - document_id
+          - title
+          - text
+          - source

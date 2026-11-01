@@ -1,0 +1,9 @@
+CARE FLOW 360 — START HERE
+
+1) Import this ZIP into Databricks Workspace. Databricks will expand the folder.
+2) Open QUICKSTART.md.
+3) Run core/src/notebooks/00_preflight.py.
+4) Choose your writable Unity Catalog catalog (the preflight notebook prints current_catalog()).
+5) Follow QUICKSTART.md for UI setup, or SETUP_COMMANDS.md for SQL/CLI/DAB commands.
+
+The project runs immediately with generated synthetic healthcare events. Kaggle data is optional and is NOT bundled because some source datasets prohibit redistribution.

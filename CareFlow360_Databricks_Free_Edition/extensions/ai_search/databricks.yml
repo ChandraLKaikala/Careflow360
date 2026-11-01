@@ -1,0 +1,20 @@
+bundle:
+  name: careflow360-ai-search
+  engine: direct
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Existing CareFlow360 Unity Catalog catalog.
+  schema:
+    default: careflow360_dev
+  embedding_model_endpoint:
+    description: Databricks-hosted embedding endpoint/model service available in this workspace.
+    default: databricks-qwen3-embedding-0-6b
+
+targets:
+  dev:
+    default: true
+    mode: development

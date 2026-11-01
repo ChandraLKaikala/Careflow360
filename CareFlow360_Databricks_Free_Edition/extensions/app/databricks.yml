@@ -1,0 +1,19 @@
+bundle:
+  name: careflow360-app
+  engine: direct
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Existing CareFlow360 Unity Catalog catalog.
+  schema:
+    default: careflow360_dev
+  warehouse_id:
+    description: Existing SQL warehouse ID.
+
+targets:
+  dev:
+    default: true
+    mode: development

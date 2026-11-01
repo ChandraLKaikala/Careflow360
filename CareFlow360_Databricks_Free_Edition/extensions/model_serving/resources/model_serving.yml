@@ -1,0 +1,11 @@
+resources:
+  model_serving_endpoints:
+    triage_model_endpoint:
+      name: careflow360-triage-model
+      description: Portfolio-only serving endpoint for synthetic/public CareFlow360 triage model.
+      config:
+        served_entities:
+          - entity_name: ${var.catalog}.${var.schema}.${var.model_name}
+            entity_version: ${var.model_version}
+            workload_size: Small
+            scale_to_zero_enabled: true
