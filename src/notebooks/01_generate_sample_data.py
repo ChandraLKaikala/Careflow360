@@ -116,6 +116,103 @@ DEPARTMENTS = ["Emergency", "Observation", "Medical", "Surgical", "ICU", "Teleme
 ARRIVAL_MODES = ["Walk-in", "Ambulance", "Wheelchair", "Police", "Transfer"]
 SEXES = ["F", "M", "X"]
 
+# Physical bed capacity per department: (bed-id prefix, bed count).
+BED_POOLS = {
+    "Emergency": ("ED", 80),
+    "Observation": ("OBS", 60),
+    "Medical": ("MED", 60),
+    "Surgical": ("SUR", 60),
+    "ICU": ("ICU", 40),
+    "Telemetry": ("TEL", 40),
+}
+
+
+def load_open_beds():
+    """Beds still occupied by an open encounter in the live pipeline.
+
+    Read-only best effort: the generator never writes pipeline tables.
+    Encounters whose latest ADT event is older than 48 hours are ignored:
+    stale open encounters are legacy artifacts of the pre-refactor
+    generator (which left encounters open forever), and treating them as
+    occupied would starve every bed pool. On a fresh install, an unreadable
+    table, or a foreign layout this safely returns an empty set — the
+    within-run uniqueness guarantee still holds either way.
+    """
+    cutoff = iso(now - timedelta(hours=48))
+    for table_name in (
+        f"{catalog}.{schema}.silver_adt",
+        f"{catalog}.careflow360_silver.adt",
+    ):
+        try:
+            if not spark.catalog.tableExists(table_name):
+                continue
+            rows = spark.sql(
+                f"""
+                SELECT DISTINCT bed_id AS bed FROM (
+                    SELECT patient_id, encounter_id, bed_id, event_type, event_ts,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY patient_id, encounter_id
+                               ORDER BY event_ts DESC
+                           ) AS rn
+                    FROM {table_name}
+                    WHERE bed_id IS NOT NULL AND event_ts >= TIMESTAMP '{cutoff}'
+                ) WHERE rn = 1 AND event_type != 'A03_DISCHARGE'
+                """
+            ).collect()
+            return {row["bed"] for row in rows}
+        except Exception as exc:
+            print(
+                f"Bed-occupancy read from {table_name} unavailable ({exc}); "
+                "continuing with within-run bed uniqueness only."
+            )
+    return set()
+
+
+class BedAllocator:
+    """Capacity-aware bed assignment for one generation run.
+
+    Invariants:
+      * At most one concurrently-admitted patient per bed WITHIN this run:
+        a bed is handed out only for a [start, end) interval that does not
+        overlap an interval already granted for that bed. end=None models
+        an encounter that stays admitted (nothing is freed this run);
+        transfer releases the ED bed and discharge releases the final bed.
+      * Beds reported occupied by still-open encounters in the live
+        pipeline (load_open_beds) are never reused by this run.
+      * When a pool is exhausted the patient gets bed_id=None (realistic
+        ED/departmental boarding under capacity pressure). The allocator
+        never fabricates a bed shared by two admitted patients.
+    """
+
+    def __init__(self, pools, preoccupied=()):
+        self._pools = pools
+        self._taken = set(preoccupied)
+        self._intervals = {}
+
+    _NEVER = datetime.max.replace(tzinfo=timezone.utc)
+
+    @classmethod
+    def _overlaps(cls, a_start, a_end, b_start, b_end):
+        # end=None means the encounter stays admitted: it never closes, so
+        # treat it as open until datetime.max (comparable with tz-aware rows).
+        a_end = cls._NEVER if a_end is None else a_end
+        b_end = cls._NEVER if b_end is None else b_end
+        return a_start < b_end and b_start < a_end
+
+    def allocate(self, department, start, end):
+        prefix, size = self._pools[department]
+        for number in range(1, size + 1):
+            bed = f"{prefix}-{number:03d}"
+            if bed in self._taken:
+                continue
+            busy = self._intervals.get(bed)
+            if busy is None:
+                busy = self._intervals[bed] = []
+            if not any(self._overlaps(start, end, s, e) for s, e in busy):
+                busy.append((start, end))
+                return bed
+        return None
+
 
 def iso(ts):
     return ts.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -179,6 +276,10 @@ patient_ids = [f"P{run_id}-{i:06d}" for i in range(1, num_patients + 1)]
 per_batch = math.ceil(num_patients / num_batches)
 summary = {"triage": 0, "vitals": 0, "adt": 0, "chief_complaints": 0}
 
+# Capacity-aware allocator seeded with beds still occupied by open live
+# encounters. See BedAllocator for the uniqueness invariants.
+bed_allocator = BedAllocator(BED_POOLS, load_open_beds())
+
 for batch_idx in range(num_batches):
     batch_patients = patient_ids[batch_idx * per_batch : (batch_idx + 1) * per_batch]
     if not batch_patients:
@@ -235,6 +336,33 @@ for batch_idx in range(num_batches):
         })
 
         initial_department = "Emergency"
+        # Encounter closure rules: decide the full admit -> (transfer) ->
+        # discharge timeline up front, so the capacity-aware allocator can
+        # grant beds only for non-overlapping occupancy intervals — transfer
+        # releases the ED bed, discharge releases the final bed. Most
+        # encounters close inside the run window; the rest stay admitted,
+        # which is the only way a later run sees occupied beds.
+        transfer_department = None
+        transfer_ts = None
+        discharge_ts = None
+        will_discharge = random.random() < 0.55
+        if will_discharge:
+            discharge_ts = arrival + timedelta(minutes=random.randint(220, 470))
+        if random.random() < 0.62:
+            if acuity <= 2:
+                transfer_department = random.choice(["ICU", "Telemetry", "Observation"])
+            else:
+                transfer_department = random.choice(["Observation", "Medical", "Surgical"])
+            transfer_ts = arrival + timedelta(minutes=random.randint(45, 180))
+        ed_bed = bed_allocator.allocate(
+            "Emergency", arrival,
+            transfer_ts if transfer_ts is not None else discharge_ts,
+        )
+        transfer_bed = (
+            bed_allocator.allocate(transfer_department, transfer_ts, discharge_ts)
+            if transfer_department is not None
+            else None
+        )
         adt_rows.append({
             "event_id": f"ADT-A01-{run_id}-{patient_id}-{batch_idx:03d}",
             "patient_id": patient_id,
@@ -242,18 +370,13 @@ for batch_idx in range(num_batches):
             "event_ts": iso(arrival),
             "event_type": "A01_ADMIT",
             "department": initial_department,
-            "bed_id": f"ED-{random.randint(1, 80):03d}",
+            # None means ED boarding under capacity pressure, never a shared bed.
+            "bed_id": ed_bed,
             "operation": "UPSERT",
             "source": "careflow360_synthetic",
         })
 
-        transfer_department = None
-        if random.random() < 0.62:
-            if acuity <= 2:
-                transfer_department = random.choice(["ICU", "Telemetry", "Observation"])
-            else:
-                transfer_department = random.choice(["Observation", "Medical", "Surgical"])
-            transfer_ts = arrival + timedelta(minutes=random.randint(45, 180))
+        if transfer_department is not None:
             adt_rows.append({
                 "event_id": f"ADT-A02-{run_id}-{patient_id}-{batch_idx:03d}",
                 "patient_id": patient_id,
@@ -261,13 +384,13 @@ for batch_idx in range(num_batches):
                 "event_ts": iso(transfer_ts),
                 "event_type": "A02_TRANSFER",
                 "department": transfer_department,
-                "bed_id": f"{transfer_department[:3].upper()}-{random.randint(1, 60):03d}",
+                # None means boarding in the target department without a bed.
+                "bed_id": transfer_bed,
                 "operation": "UPSERT",
                 "source": "careflow360_synthetic",
             })
 
-        if random.random() < 0.33:
-            discharge_ts = arrival + timedelta(minutes=random.randint(220, 470))
+        if will_discharge:
             adt_rows.append({
                 "event_id": f"ADT-A03-{run_id}-{patient_id}-{batch_idx:03d}",
                 "patient_id": patient_id,

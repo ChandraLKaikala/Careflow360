@@ -188,7 +188,15 @@ class LiveJobUpgradePlanTests(unittest.TestCase):
         self.assertIn("client.jobs.list_runs(job_id=JOB_ID, active_only=True, limit=1)", source)
         self.assertIn('"expected_stream_counts_from_manifest"', source)
         self.assertIn('"upsert_policy_chunks"', source)
-        self.assertIn('expected_new = int((generate_output.task_values or {}).get("num_patients"))', source)
+        # Task values are NOT readable via jobs.get_run_output in this SDK
+        # (RunOutput has no task_values field): the immutable generator
+        # manifest is the supported mechanism instead.
+        self.assertIn(
+            'manifest_path = f"/Volumes/workspace/{SCHEMA}/landing/manifests/{result.run_id}.json"',
+            source,
+        )
+        self.assertIn('expected_new = int(manifest["num_patients"])', source)
+        self.assertNotIn("generate_output.task_values", source)
         self.assertIn("after_count - before_count != expected_new", source)
 
 

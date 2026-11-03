@@ -73,12 +73,12 @@ class ModelOutputContractTests(unittest.TestCase):
             "encounter_id": ["E1_new", "E2_new"],
         })
         guard(current, 2)  # one current encounter per patient is valid
-        with self.assertRaisesRegex(RuntimeError, "Expected 3 current patients"):
+        with self.assertRaisesRegex(RuntimeError, "Expected 3 current patient encounters"):
             guard(current, 3)
         with self.assertRaisesRegex(RuntimeError, "duplicate current patient"):
             guard(pd.DataFrame({
                 "patient_id": ["P1", "P1"],
-                "encounter_id": ["E1_old", "E1_new"],
+                "encounter_id": ["E1_new", "E1_new"],
             }), 2)
         with self.assertRaisesRegex(RuntimeError, "null patient or encounter"):
             guard(pd.DataFrame({
@@ -89,9 +89,10 @@ class ModelOutputContractTests(unittest.TestCase):
             guard(current.iloc[:0], 0)
         source = (ROOT / "src/notebooks/04_train_triage_model.py").read_text()
         self.assertIn('df.join(new_keys, ["patient_id", "encounter_id"], "inner")', source)
-        self.assertIn('current_keys.join(existing_ids, "patient_id", "left_anti")', source)
+        self.assertIn('["patient_id", "encounter_id"], "left_anti"', source)
         self.assertIn('spark.table(current_patient_table)', source)
-        self.assertIn('ensure_current_patient_coverage(score_pdf, new_patient_count)', source)
+        self.assertIn('ensure_current_patient_coverage(score_pdf, new_encounter_count)', source)
+        self.assertIn("approved_pipeline.predict(score_pdf[features])", source)
 
     def test_synthetic_model_features_train_and_predict(self):
         fs = FakeFs()

@@ -87,20 +87,26 @@ class FakeSparkResult:
 
 
 class FakeSparkCatalog:
-    """Minimal catalog stub: the gold AI category table already exists, so the
-    quota-guarded ai_classify CREATE TABLE branch is skipped in tests."""
+    """Minimal catalog stub: the gold AI category table and the ML
+    predictions table already exist, so the quota-guarded ai_classify
+    CREATE TABLE branch and the prediction-dependent view branches run."""
 
-    def __init__(self):
-        self.existing = {"workspace.careflow360_gold.chief_complaint_categories"}
+    def __init__(self, existing=None):
+        if existing is None:
+            existing = {
+                "workspace.careflow360_gold.chief_complaint_categories",
+                "workspace.careflow360_gold.triage_predictions",
+            }
+        self.existing = set(existing)
 
     def tableExists(self, name):
         return name in self.existing
 
 
 class FakeSpark:
-    def __init__(self):
+    def __init__(self, catalog=None):
         self.statements = []
-        self.catalog = FakeSparkCatalog()
+        self.catalog = catalog or FakeSparkCatalog()
 
     def sql(self, statement):
         self.statements.append(statement)
@@ -231,6 +237,24 @@ class ViewOutputTests(unittest.TestCase):
                             "careflow360.gold_triage_training" in sql for sql in statements))
         self.assertTrue(any("careflow360_silver.patient_location_history" in sql
                             for sql in statements))
+
+    def test_first_install_defers_prediction_dependent_views(self):
+        # Fresh install: the ML task has not written triage_predictions yet,
+        # so the prediction-dependent views must be deferred, not fail the
+        # whole views task.
+        spark = FakeSpark(FakeSparkCatalog(
+            existing={"workspace.careflow360_gold.chief_complaint_categories"}))
+        values = {"catalog": "workspace", "pipeline_schema": "careflow360",
+                  "bronze_schema": "careflow360_bronze",
+                  "silver_schema": "careflow360_silver",
+                  "gold_schema": "careflow360_gold"}
+        # Must not raise: the prediction-dependent views are deferred instead
+        # of failing the whole views task on a fresh install.
+        execute_code(VIEWS, spark, FakeDbutils(values))
+        statements = [x for x in spark.statements if "CREATE OR REPLACE VIEW" in x]
+        self.assertEqual(len(statements), 15)
+        self.assertFalse(any("triage_model_quality" in sql for sql in statements))
+        self.assertFalse(any("triage_predictions_current" in sql for sql in statements))
 
     def test_invalid_sql_identifier_rejected(self):
         bad = FakeDbutils({"catalog": "workspace;DROP", "pipeline_schema": "careflow360"})

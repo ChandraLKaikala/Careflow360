@@ -133,24 +133,47 @@ if spark.catalog.tableExists(prediction):
         errors.append(f"Invalid batch prediction labels: {invalid}")
 
 if spark.catalog.tableExists(prediction) and spark.catalog.tableExists(patient):
-    # Current-patient prediction coverage: every Patient 360 patient must have
-    # at least one stored prediction. The table is append-only per patient, so
-    # a returning patient's stored prediction may reference an earlier
-    # encounter — coverage is by patient_id, not encounter.
+    # Current-encounter prediction coverage: every (patient_id, encounter_id)
+    # pair in Patient 360 must have its own stored prediction row. The
+    # prediction table is append-only per encounter, so a returning patient's
+    # earlier encounters keep their history while the CURRENT encounter must
+    # still be scored by its own row.
     uncovered = (
-        spark.table(patient).select("patient_id").distinct()
+        spark.table(patient).select("patient_id", "encounter_id").distinct()
         .join(
-            spark.table(prediction).select("patient_id").distinct(),
-            "patient_id", "left_anti",
+            spark.table(prediction).select("patient_id", "encounter_id").distinct(),
+            ["patient_id", "encounter_id"], "left_anti",
         )
         .limit(1).count()
     )
     if uncovered:
         errors.append(
-            "Prediction coverage gap: current Patient 360 patients without any stored prediction"
+            "Prediction coverage gap: current Patient 360 encounters without their own stored prediction"
         )
     else:
-        print("Prediction coverage: every current patient has a stored prediction")
+        print("Prediction coverage: every current encounter has its own stored prediction")
+
+    # Bed-occupancy observation: two currently-admitted patients sharing one
+    # bed is physically impossible. Reported as a WARNING (not fatal) because
+    # legacy pre-refactor synthetic encounters violate this rule and age out
+    # over time; new generator runs enforce unique bed occupancy per bed.
+    bed_conflicts = (
+        spark.table(patient)
+        .where(F.col("is_currently_admitted") & F.col("current_bed_id").isNotNull())
+        .groupBy("current_department", "current_bed_id")
+        .agg(F.countDistinct("patient_id").alias("patients"))
+        .where(F.col("patients") > 1)
+    )
+    conflict_rows = bed_conflicts.count()
+    if conflict_rows:
+        conflict_patients = bed_conflicts.agg(F.sum("patients").alias("p")).first()["p"]
+        print(
+            f"WARNING: {conflict_rows} beds currently hold more than one admitted "
+            f"patient ({conflict_patients} patients involved). Expected only in legacy "
+            f"synthetic data; new generator runs enforce unique bed occupancy."
+        )
+    else:
+        print("Bed occupancy: at most one currently-admitted patient per bed")
 
 if spark.catalog.tableExists(command):
     freshness = spark.table(command).agg(

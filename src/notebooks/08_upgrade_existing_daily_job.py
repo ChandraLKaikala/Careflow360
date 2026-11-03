@@ -119,12 +119,14 @@ def checked_notebooks(client, root):
             'f"P{run_id}-{i:06d}"', 'dbutils.jobs.taskValues.set(key="run_id"',
             "dbutils.fs.put(path, payload, False)",
         ],
-        "03_create_views.py": ["CREATE OR REPLACE VIEW"],
+        "03_create_views.py": ["CREATE OR REPLACE VIEW", "triage_predictions_current"],
         "04_train_triage_model.py": [
             "insert_new_patient_predictions",
             "whenNotMatchedInsertAll",
             "split_patient_holdout",
-            'new_keys = current_keys.join(existing_ids, "patient_id", "left_anti")',
+            "candidate_wins_same_holdout",
+            "find_champion_version",
+            '["patient_id", "encounter_id"], "left_anti"',
         ],
         "05_create_policy_docs.py": [
             "policy_table_name", "upsert_policy_chunks", "whenNotMatchedInsertAll"
@@ -310,12 +312,19 @@ else:
             f"SELECT COUNT(*) AS n FROM workspace.{GOLD}.patient_360"
         ).first()["n"]
         print("Patient 360 after run:", after_count)
-        # num_patients may be 'random': validate against the count this run actually chose.
-        generate_task = next(
-            t for t in (latest.tasks or []) if t.task_key == "generate_daily_patients"
-        )
-        generate_output = client.jobs.get_run_output(run_id=generate_task.run_id)
-        expected_new = int((generate_output.task_values or {}).get("num_patients"))
+        # num_patients may be 'random': validate against the count this run
+        # actually chose. Task values are NOT readable via the SDK's
+        # jobs.get_run_output in this environment (RunOutput has no
+        # task_values field), so read the immutable generator manifest that
+        # the generator task wrote for this exact run ID instead — the same
+        # authoritative source 06_validate uses.
+        manifest_path = f"/Volumes/workspace/{SCHEMA}/landing/manifests/{result.run_id}.json"
+        manifest = json.loads(dbutils.fs.head(manifest_path, 65536))
+        if manifest.get("run_id") != result.run_id:
+            raise RuntimeError(
+                f"Generator manifest {manifest_path} does not match run {result.run_id}"
+            )
+        expected_new = int(manifest["num_patients"])
         if after_count - before_count != expected_new:
             raise RuntimeError(
                 f"Expected +{expected_new} synthetic patients, observed {after_count - before_count}"

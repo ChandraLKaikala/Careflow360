@@ -76,10 +76,11 @@ class FakeTable:
             first=lambda: {"rows": len(rows), "unique_patients": len({r["patient_id"] for r in rows})}
         )
 
-    def groupBy(self, name):
+    def groupBy(self, *names):
         groups = {}
         for row in self.rows:
-            groups[row[name]] = groups.get(row[name], 0) + 1
+            key = tuple(row[name] for name in names) if len(names) > 1 else row[names[0]]
+            groups[key] = groups.get(key, 0) + 1
         return FakeGrouped(groups)
 
     def limit(self, n):
@@ -94,7 +95,15 @@ class FakeGrouped:
         self.groups = groups
 
     def count(self):
-        return FakeTable([{"patient_id": k, "count": n} for k, n in self.groups.items()])
+        rows = []
+        for key, n in self.groups.items():
+            if isinstance(key, tuple):
+                row = dict(zip(("patient_id", "encounter_id"), key))
+            else:
+                row = {"patient_id": key}
+            row["count"] = n
+            rows.append(row)
+        return FakeTable(rows)
 
 
 class FakeSpark:
@@ -123,13 +132,15 @@ class FakeDeltaBuilder:
         return self
 
     def execute(self):
-        assert self.key == "target.patient_id = new.patient_id"
+        assert self.key == ("target.patient_id = new.patient_id "
+                            "AND target.encounter_id = new.encounter_id")
         assert self.insert_only
-        existing = {r["patient_id"] for r in self.target.rows}
+        existing = {(r["patient_id"], r["encounter_id"]) for r in self.target.rows}
         for row in self.source.rows:
-            if row["patient_id"] not in existing:
+            pair = (row["patient_id"], row["encounter_id"])
+            if pair not in existing:
                 self.target.rows.append(dict(row))
-                existing.add(row["patient_id"])
+                existing.add(pair)
 
 
 class FakeDeltaTable:
@@ -211,36 +222,51 @@ class InsertValidationTests(unittest.TestCase):
 
 class PredictionMergeTests(unittest.TestCase):
     def test_merge_preserves_old_predictions_and_adds_new_only(self):
-        target = FakeSource([{"patient_id": "P000001", "encounter_id": "old", "predicted_triage_acuity": 2}])
-        target.groupBy = lambda _: FakeGrouped({"P000001": 1})
-        target.columns = FakeSource([]).columns
-        spark = FakeSpark({"predictions": target.rows})
-        # Use a simulated Spark table whose source rows and target table share storage.
-        target_dataset = FakeTable(target.rows)
+        rows = [{"patient_id": "P000001", "encounter_id": "old", "predicted_triage_acuity": 2}]
+        target_dataset = FakeTable(rows)
+        spark = FakeSpark({"predictions": rows})
         spark.table = lambda _: target_dataset
         FakeDeltaTable.target = target_dataset
         source = FakeSource([
-            {"patient_id": "P000001", "encounter_id": "changed", "predicted_triage_acuity": 5},
+            {"patient_id": "P000001", "encounter_id": "old", "predicted_triage_acuity": 5},
+            {"patient_id": "P000001", "encounter_id": "new", "predicted_triage_acuity": 4},
             {"patient_id": "Pjob123-000001", "encounter_id": "new", "predicted_triage_acuity": 1},
         ])
         guard = function_from_notebook(ML_PATH, "insert_new_patient_predictions",
                                        {"DeltaTable": FakeDeltaTable, "F": Functions})
         self.assertEqual(guard(spark, "predictions", source), "insert_only_merge")
-        self.assertEqual(len(target_dataset.rows), 2)
+        # Existing pair untouched (insert-only); the returning patient's NEW
+        # encounter and the new patient's encounter are appended: history kept.
+        self.assertEqual(len(target_dataset.rows), 3)
         self.assertEqual(target_dataset.rows[0]["predicted_triage_acuity"], 2)
-        self.assertEqual(target_dataset.rows[1]["predicted_triage_acuity"], 1)
-        self.assertEqual(guard(spark, "predictions", source), "insert_only_merge")
-        self.assertEqual(len(target_dataset.rows), 2)
+        self.assertEqual(target_dataset.rows[1]["encounter_id"], "new")
+        self.assertEqual(target_dataset.rows[2]["patient_id"], "Pjob123-000001")
 
-    def test_existing_duplicate_patient_keys_are_rejected(self):
+    def test_existing_duplicate_patient_encounter_pairs_are_rejected(self):
+        spark = FakeSpark({"predictions": [
+            {"patient_id": "P1", "encounter_id": "E1", "predicted_triage_acuity": 2},
+            {"patient_id": "P1", "encounter_id": "E1", "predicted_triage_acuity": 3},
+        ]})
+        guard = function_from_notebook(ML_PATH, "insert_new_patient_predictions",
+                                       {"DeltaTable": FakeDeltaTable, "F": Functions})
+        with self.assertRaisesRegex(RuntimeError, r"duplicate \(patient_id, encounter_id\) pairs"):
+            guard(spark, "predictions", FakeSource([]))
+
+    def test_returning_patient_history_rows_are_not_duplicates(self):
+        # Encounter grain: two rows for one patient with DIFFERENT encounters
+        # are legitimate history, not a duplicate-pair violation.
         spark = FakeSpark({"predictions": [
             {"patient_id": "P1", "encounter_id": "E1", "predicted_triage_acuity": 2},
             {"patient_id": "P1", "encounter_id": "E2", "predicted_triage_acuity": 3},
         ]})
         guard = function_from_notebook(ML_PATH, "insert_new_patient_predictions",
                                        {"DeltaTable": FakeDeltaTable, "F": Functions})
-        with self.assertRaisesRegex(RuntimeError, "duplicate patient IDs"):
-            guard(spark, "predictions", FakeSource([]))
+        self.assertEqual(
+            guard(spark, "predictions", FakeSource([
+                {"patient_id": "P2", "encounter_id": "E9", "predicted_triage_acuity": 1},
+            ])),
+            "insert_only_merge",
+        )
 
 
 class JobParameterTests(unittest.TestCase):

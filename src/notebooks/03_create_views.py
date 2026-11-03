@@ -83,44 +83,57 @@ for t in gold_tables:
 # The CareFlow360 Hospital Operations Dashboard depends on these.
 # ---------------------------------------------------------------------------
 
-# 1) Model quality view: predicted vs actual triage acuity per patient.
+# 1) Model quality + current-encounter prediction views.
 #    Pure SQL over physical tables: no AI-function quota cost per run.
-spark.sql(
-    f"""
-    CREATE OR REPLACE VIEW {CATALOG}.{GOLD_SCHEMA}.triage_model_quality
-    COMMENT 'Per-patient predicted vs actual triage acuity agreement for the live model. Includes in-sample patients; run notebook 09 for holdout-only evaluation.'
-    AS SELECT p.patient_id,
-              p.predicted_triage_acuity,
-              t.triage_acuity AS actual_triage_acuity,
-              CAST(p.predicted_triage_acuity = t.triage_acuity AS INT) AS correct
-    FROM {CATALOG}.{GOLD_SCHEMA}.triage_predictions p
-    JOIN {CATALOG}.{GOLD_SCHEMA}.triage_training t
-      ON p.encounter_id = t.encounter_id
-    """
-)
-print(f"  ✓ {GOLD_SCHEMA}.triage_model_quality")
+#    Prediction-dependent views are CONDITIONAL: on a fresh install this
+#    task runs before the first ML training write, so triage_predictions
+#    does not exist yet and creating these views would fail the whole task.
+#    The next daily run after the ML task creates them.
+predictions_table = f"{CATALOG}.{GOLD_SCHEMA}.triage_predictions"
+if spark.catalog.tableExists(predictions_table):
+    spark.sql(
+        f"""
+        CREATE OR REPLACE VIEW {CATALOG}.{GOLD_SCHEMA}.triage_model_quality
+        COMMENT 'Per-patient predicted vs actual triage acuity agreement for the live model. Includes in-sample patients; run notebook 09 for holdout-only evaluation.'
+        AS SELECT p.patient_id,
+                  p.predicted_triage_acuity,
+                  t.triage_acuity AS actual_triage_acuity,
+                  CAST(p.predicted_triage_acuity = t.triage_acuity AS INT) AS correct
+        FROM {CATALOG}.{GOLD_SCHEMA}.triage_predictions p
+        JOIN {CATALOG}.{GOLD_SCHEMA}.triage_training t
+          ON p.encounter_id = t.encounter_id
+        """
+    )
+    print(f"  ✓ {GOLD_SCHEMA}.triage_model_quality")
 
-# 1b) Current-encounter prediction view. triage_predictions is append-only by
-#     patient, so a returning patient's stored prediction may reference an
-#     earlier encounter. This view keeps only predictions matching the
-#     patient's current encounter in Patient 360; triage_model_quality above
-#     remains the historical (all-encounter, in-sample) agreement view.
-spark.sql(
-    f"""
-    CREATE OR REPLACE VIEW {CATALOG}.{GOLD_SCHEMA}.triage_predictions_current
-    COMMENT 'Predictions matching each patient current encounter in Patient 360; obsolete outcomes from earlier encounters are excluded. Historical agreement: see triage_model_quality.'
-    AS SELECT
-              p.patient_id,
-              p.encounter_id,
-              p.predicted_triage_acuity,
-              t.triage_acuity AS actual_triage_acuity,
-              CAST(p.predicted_triage_acuity = t.triage_acuity AS INT) AS correct
-    FROM {CATALOG}.{GOLD_SCHEMA}.triage_predictions p
-    JOIN {CATALOG}.{GOLD_SCHEMA}.patient_360 t
-      ON p.patient_id = t.patient_id AND p.encounter_id = t.encounter_id
-    """
-)
-print(f"  ✓ {GOLD_SCHEMA}.triage_predictions_current")
+    # 1b) Current-encounter prediction view. triage_predictions is
+    #     append-only per (patient_id, encounter_id), so a returning
+    #     patient keeps predictions for earlier encounters. This view
+    #     keeps only predictions matching the patient's current encounter
+    #     in Patient 360; triage_model_quality above remains the historical
+    #     (all-encounter, in-sample) agreement view.
+    spark.sql(
+        f"""
+        CREATE OR REPLACE VIEW {CATALOG}.{GOLD_SCHEMA}.triage_predictions_current
+        COMMENT 'Predictions matching each patient current encounter in Patient 360; obsolete outcomes from earlier encounters are excluded. Historical agreement: see triage_model_quality.'
+        AS SELECT
+                  p.patient_id,
+                  p.encounter_id,
+                  p.predicted_triage_acuity,
+                  t.triage_acuity AS actual_triage_acuity,
+                  CAST(p.predicted_triage_acuity = t.triage_acuity AS INT) AS correct
+        FROM {CATALOG}.{GOLD_SCHEMA}.triage_predictions p
+        JOIN {CATALOG}.{GOLD_SCHEMA}.patient_360 t
+          ON p.patient_id = t.patient_id AND p.encounter_id = t.encounter_id
+        """
+    )
+    print(f"  ✓ {GOLD_SCHEMA}.triage_predictions_current")
+else:
+    print(
+        f"  - {GOLD_SCHEMA}.triage_model_quality and triage_predictions_current "
+        f"deferred: {predictions_table} does not exist yet (fresh install). "
+        f"The next daily run after the ML task creates them."
+    )
 
 # 2) AI complaint categories: physical table, created ONCE with ai_classify.
 #    Re-running classification daily would burn Free Edition AI-function

@@ -9,6 +9,7 @@ import re
 import mlflow
 import mlflow.sklearn
 import pandas as pd
+from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
 from pyspark.sql import functions as F
 from sklearn.compose import ColumnTransformer
@@ -200,7 +201,7 @@ with mlflow.start_run(run_name="careflow360-random-forest") as run:
         "n_jobs": 2,
         "data_classification": "synthetic_or_public",
         "clinical_use": "prohibited_demo_only",
-        "release_gate": "macro_f1_gt_dummy_and_balanced_accuracy_gte_dummy",
+        "release_gate": "majority_baseline_then_same_holdout_champion_comparison",
     })
     mlflow.log_metrics(metrics)
     if not beats_majority_baseline(metrics):
@@ -223,53 +224,126 @@ print("Metrics:", metrics)
 registered = mlflow.register_model(f"runs:/{run_id}/model", full_model_name)
 client = MlflowClient()
 
-# Release policy: a candidate must beat the majority-class baseline (checked
-# above) AND must not regress against the current Champion. Beating a dummy
-# classifier is not enough to justify replacing a deployed model.
-previous_champion = None
-try:
-    previous_champion = client.get_model_version_by_alias(full_model_name, "Champion")
-except Exception:
-    previous_champion = None
 
-if previous_champion is None:
-    client.set_registered_model_alias(full_model_name, "Champion", registered.version)
-    print(f"No previous Champion; alias Champion set to version {registered.version}")
+def find_champion_version(registry_client, model_name, alias="Champion"):
+    """Return the aliased Champion version, or None only for a genuine first
+    install (the registered model or the alias does not exist yet).
+
+    Permission, authentication, and registry service failures MUST propagate:
+    silently treating them as "no previous Champion" could replace a deployed
+    model on a transient error. Only an explicit not-found returns None.
+    """
+    try:
+        return registry_client.get_model_version_by_alias(model_name, alias)
+    except MlflowException as exc:
+        error_code = str(getattr(exc, "error_code", "") or "")
+        if error_code in {"RESOURCE_DOES_NOT_EXIST", "RESOURCE_NOT_FOUND"}:
+            return None
+        if error_code == "INVALID_PARAMETER_VALUE" and alias in str(exc):
+            # Some registry backends surface a missing alias this way.
+            return None
+        raise
+
+
+def evaluate_version_on_holdout(model_uri, X_test, y_test):
+    """Score one registered version on THIS run's patient-held-out rows.
+
+    Metrics logged by a previous run were computed on a different test
+    dataset; comparing them with this run's candidate metrics is invalid.
+    Both versions are re-scored on identical rows instead.
+    """
+    loaded = mlflow.sklearn.load_model(model_uri)
+    preds = loaded.predict(X_test)
+    return {
+        "f1_macro": float(f1_score(y_test, preds, average="macro", zero_division=0)),
+        "balanced_accuracy": float(balanced_accuracy_score(y_test, preds)),
+    }
+
+
+def candidate_wins_same_holdout(candidate_metrics, champion_metrics):
+    """Promotion gate: the candidate must meet or beat the incumbent on BOTH
+    decision metrics, computed on the SAME holdout rows. The majority-class
+    baseline gate has already been enforced upstream in this run."""
+    return (
+        candidate_metrics["f1_macro"] >= champion_metrics["f1_macro"]
+        and candidate_metrics["balanced_accuracy"] >= champion_metrics["balanced_accuracy"]
+    )
+
+
+champion_version = find_champion_version(client, full_model_name)
+candidate_metrics = {k: metrics[k] for k in ("f1_macro", "balanced_accuracy")}
+if champion_version is None:
+    # First install: no previous Champion exists, and the candidate has
+    # already passed the majority-baseline gate. It is the approved model.
+    champion_metrics = None
+    promote = True
+    approved_version = registered.version
+    approved_pipeline = pipeline
 else:
-    prev_run = client.get_run(previous_champion.run_id)
-    prev_f1 = float(prev_run.data.metrics.get("f1_macro", float("nan")))
-    cand_f1 = float(metrics["f1_macro"])
-    if cand_f1 >= prev_f1:
-        client.set_registered_model_alias(full_model_name, "Champion", registered.version)
-        print(
-            f"Candidate f1_macro={cand_f1:.4f} >= previous Champion "
-            f"f1_macro={prev_f1:.4f}; alias Champion moved to version {registered.version}"
-        )
+    # Compare on the SAME evaluation set: re-score the incumbent Champion on
+    # this run's holdout instead of trusting metrics from a different
+    # historical run's test dataset.
+    champion_metrics = evaluate_version_on_holdout(
+        f"models:/{full_model_name}/{champion_version.version}", X_test, y_test
+    )
+    promote = candidate_wins_same_holdout(candidate_metrics, champion_metrics)
+    if promote:
+        approved_version = registered.version
+        approved_pipeline = pipeline
     else:
-        print(
-            f"WARNING: candidate f1_macro={cand_f1:.4f} < previous Champion "
-            f"f1_macro={prev_f1:.4f}. Champion stays on version "
-            f"{previous_champion.version}; candidate registered as version "
-            f"{registered.version} without alias promotion."
+        # The candidate was REJECTED: new patients must be scored with the
+        # approved incumbent Champion, never with the rejected candidate.
+        approved_version = champion_version.version
+        approved_pipeline = mlflow.sklearn.load_model(
+            f"models:/{full_model_name}/{approved_version}"
         )
-print(f"Registered version {registered.version}")
+
+# Promotion happens only after every required check has succeeded: the
+# majority-baseline gate above, then the same-holdout Champion comparison.
+if champion_version is None:
+    client.set_registered_model_alias(full_model_name, "Champion", registered.version)
+    print(f"First release: alias Champion set to version {registered.version}")
+elif promote:
+    client.set_registered_model_alias(full_model_name, "Champion", registered.version)
+    print(
+        f"Candidate f1_macro={candidate_metrics['f1_macro']:.4f} / "
+        f"balanced_accuracy={candidate_metrics['balanced_accuracy']:.4f} meets Champion "
+        f"v{champion_version.version} f1_macro={champion_metrics['f1_macro']:.4f} / "
+        f"balanced_accuracy={champion_metrics['balanced_accuracy']:.4f} on the SAME holdout; "
+        f"alias Champion moved to version {registered.version}"
+    )
+else:
+    print(
+        f"WARNING: candidate f1_macro={candidate_metrics['f1_macro']:.4f} / "
+        f"balanced_accuracy={candidate_metrics['balanced_accuracy']:.4f} loses to Champion "
+        f"v{champion_version.version} f1_macro={champion_metrics['f1_macro']:.4f} / "
+        f"balanced_accuracy={champion_metrics['balanced_accuracy']:.4f} on the SAME holdout. "
+        f"Champion stays on version {champion_version.version}; candidate registered as "
+        f"version {registered.version} WITHOUT alias promotion. New patients will be scored "
+        f"with the approved Champion, not the rejected candidate."
+    )
+print(
+    f"Registered version {registered.version}; scoring will use approved version {approved_version}"
+)
 
 # COMMAND ----------
 
-# Batch scoring outputs one prediction per *current patient*, not every historical
-# training encounter. Keep the full encounter history available for training.
-def ensure_current_patient_coverage(scored, patient_count):
-    if patient_count < 1:
-        raise RuntimeError("Patient 360 has no current patient records to score")
-    if len(scored) != patient_count:
+# Batch scoring stores one prediction per *current encounter* — keyed by
+# (patient_id, encounter_id) — while the full append-only history is kept:
+# a returning patient's earlier encounters retain their stored predictions,
+# and the CURRENT encounter still receives its own row.
+def ensure_current_patient_coverage(scored, pair_count):
+    if pair_count < 1:
+        raise RuntimeError("Patient 360 has no current patient encounters to score")
+    if len(scored) != pair_count:
         raise RuntimeError(
-            f"Expected {patient_count} current patients, but matched {len(scored)} "
+            f"Expected {pair_count} current patient encounters, but matched {len(scored)} "
             "training rows. Investigate missing/duplicate encounter keys."
         )
-    if scored["patient_id"].isna().any() or scored["encounter_id"].isna().any():
+    if scored[["patient_id", "encounter_id"]].isna().any().any():
         raise RuntimeError("Scoring rows have null patient or encounter IDs")
-    if scored["patient_id"].duplicated().any():
-        raise RuntimeError("Scoring rows contain duplicate current patient IDs")
+    if scored.duplicated(["patient_id", "encounter_id"]).any():
+        raise RuntimeError("Scoring rows contain duplicate current patient encounters")
 
 
 current_keys = (
@@ -277,21 +351,27 @@ current_keys = (
     .select("patient_id", "encounter_id")
     .dropDuplicates()
 )
-# Only new patient IDs need a prediction: the existing table is append-only.
-# Do not bring 600, 20,000, or more already-scored patients back to pandas.
+# Only unseen (patient_id, encounter_id) pairs need a prediction: the table
+# is append-only, and a RETURNING patient's current encounter is new even
+# though the patient was already scored for an earlier encounter. Do not
+# bring 600, 20,000, or more already-scored encounters back to pandas.
 if spark.catalog.tableExists(prediction_table):
-    existing_ids = spark.table(prediction_table).select("patient_id").dropDuplicates()
-    new_keys = current_keys.join(existing_ids, "patient_id", "left_anti")
+    existing_pairs = (
+        spark.table(prediction_table).select("patient_id", "encounter_id").dropDuplicates()
+    )
+    new_keys = current_keys.join(
+        existing_pairs, ["patient_id", "encounter_id"], "left_anti"
+    )
 else:
     new_keys = current_keys
-new_patient_count = new_keys.count()
-print(f"Previously unscored current patients: {new_patient_count}")
-if new_patient_count > max_local_rows:
+new_encounter_count = new_keys.count()
+print(f"Previously unscored current encounters: {new_encounter_count}")
+if new_encounter_count > max_local_rows:
     raise RuntimeError(
-        f"{new_patient_count} unscored current patients exceed max_local_rows="
+        f"{new_encounter_count} unscored current encounters exceed max_local_rows="
         f"{max_local_rows}; score in smaller batches instead of unbounded collection."
     )
-if new_patient_count:
+if new_encounter_count:
     # Join by both patient and encounter, so legacy historical encounters
     # are never mistaken for the patient's current episode.
     score_src = df.join(new_keys, ["patient_id", "encounter_id"], "inner")
@@ -299,19 +379,21 @@ if new_patient_count:
         score_src.select("patient_id", "encounter_id", *features)
         .limit(max_local_rows + 1).toPandas()
     )
-    ensure_current_patient_coverage(score_pdf, new_patient_count)
-    # Score using the fitted, evaluated model already in memory instead of
-    # re-downloading the just-registered Champion model from the registry.
-    score_pdf["predicted_triage_acuity"] = pipeline.predict(score_pdf[features]).astype(int)
+    ensure_current_patient_coverage(score_pdf, new_encounter_count)
+    # Score with the APPROVED model version selected by the release gate
+    # above (the incumbent Champion when the candidate was rejected), never
+    # with a rejected or unevaluated candidate pipeline.
+    score_pdf["predicted_triage_acuity"] = (
+        approved_pipeline.predict(score_pdf[features]).astype(int)
+    )
     score_sdf = spark.createDataFrame(score_pdf)
 else:
     print("Idempotent scoring: no previously unseen patients; existing predictions preserved.")
 
 # The deployed triage_predictions Delta table may have appendOnly enabled.
-# Never overwrite or delete existing patient predictions. Insert-only MERGE
-# is idempotent: matched patient_id rows stay put and new patients are added.
-# Spark's Patient 360 materialized view independently applies the latest
-# patient state; historical location changes are tracked by AUTO CDC SCD2.
+# Never overwrite or delete existing predictions. Insert-only MERGE at
+# (patient_id, encounter_id) grain is idempotent: matched pairs stay put and
+# a returning patient's new encounter is appended, preserving history.
 from delta.tables import DeltaTable
 
 
@@ -329,22 +411,22 @@ def insert_new_patient_predictions(spark, target_name, source):
             f"source_only={sorted(source_columns - target_columns)}"
         )
     dup = (
-        target.groupBy("patient_id").count()
+        target.groupBy("patient_id", "encounter_id").count()
         .where(F.col("count") > 1)
         .limit(1).count()
     )
     if dup:
-        raise RuntimeError("Existing prediction table has duplicate patient IDs")
+        raise RuntimeError("Existing prediction table has duplicate (patient_id, encounter_id) pairs")
     (DeltaTable.forName(spark, target_name).alias("target")
-        .merge(source.alias("new"), "target.patient_id = new.patient_id")
+        .merge(source.alias("new"), "target.patient_id = new.patient_id AND target.encounter_id = new.encounter_id")
         .whenNotMatchedInsertAll()
         .execute())
     return "insert_only_merge"
 
 
-if new_patient_count:
+if new_encounter_count:
     write_mode = insert_new_patient_predictions(spark, prediction_table, score_sdf)
-    print(f"Prediction table {prediction_table}: {write_mode}; new patients={new_patient_count}")
+    print(f"Prediction table {prediction_table}: {write_mode}; new encounters={new_encounter_count}")
 else:
-    print(f"Prediction table {prediction_table}: unchanged (no new patient IDs)")
-print("Existing predictions are preserved; only previously unseen patient IDs are inserted.")
+    print(f"Prediction table {prediction_table}: unchanged (no unseen current encounters)")
+print("Existing predictions are preserved; only previously unseen patient encounters are inserted.")
