@@ -34,7 +34,15 @@ def widget(name, default, label=None):
 catalog = widget("catalog", spark.sql("SELECT current_catalog() AS c").first()["c"])
 schema = widget("schema", "careflow360")
 volume = widget("volume", "landing")
-num_patients = int(widget("num_patients", "100"))
+num_patients_setting = widget("num_patients", "100").strip()
+if num_patients_setting.lower() == "random":
+    # Daily incremental runs may insert a random patient count instead of a
+    # fixed 100. Pick inside the quota-safe 50-150 band (still within the
+    # 50-2000 guard below) so one run cannot exhaust Free Edition quota.
+    num_patients = random.randint(50, 150)
+    print(f"num_patients='random': chose {num_patients} patients for this run")
+else:
+    num_patients = int(num_patients_setting)
 num_batches = int(widget("num_batches", "5"))
 seconds_between_batches = float(widget("seconds_between_batches", "0"))
 reset_events = widget("reset_events", "false").lower() == "true"
@@ -46,7 +54,8 @@ for label, value in [("catalog", catalog), ("schema", schema), ("volume", volume
         raise ValueError(f"Unsafe {label}: {value!r}")
 
 # One interactive replay must not exhaust the serverless notebook's quota.
-# The existing scheduled job remains 100 patients in five micro-batches.
+# The scheduled daily job passes num_patients='random', which resolves to a
+# random 50-150 patient count per run before the guards below are applied.
 if num_patients < 50 or num_patients > 2000:
     raise ValueError("num_patients must be between 50 and 2000")
 if num_batches < 1 or num_batches > 50:

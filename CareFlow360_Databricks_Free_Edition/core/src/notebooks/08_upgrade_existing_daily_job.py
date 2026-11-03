@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "6"
+# ///
 # MAGIC %md
 # MAGIC # One-time CareFlow360 existing-job upgrade
 # MAGIC Pull GitHub main into this Databricks Git folder first. This notebook
@@ -50,7 +54,7 @@ def make_plan(tasks, paths):
 
     notebook(generator, "01_generate_sample_data.py", {
         "catalog": "workspace", "schema": SCHEMA, "volume": "landing",
-        "num_patients": "100", "num_batches": "5",
+        "num_patients": "random", "num_batches": "5",
         "run_id": "{{job.run_id}}", "reset_events": "false",
         "seconds_between_batches": "0",
     })
@@ -141,7 +145,7 @@ def checked_notebooks(client, root):
                 raise
             if str(status.object_type).split(".")[-1].upper() != "NOTEBOOK":
                 continue
-            response = client.workspace.export_(
+            response = client.workspace.export(
                 path=candidate, format=workspace.ExportFormat.SOURCE
             )
             source = base64.b64decode(response.content or "").decode("utf-8")
@@ -306,6 +310,14 @@ else:
             f"SELECT COUNT(*) AS n FROM workspace.{GOLD}.patient_360"
         ).first()["n"]
         print("Patient 360 after run:", after_count)
-        if after_count - before_count != 100:
-            raise RuntimeError(f"Expected +100 synthetic patients, observed {after_count-before_count}")
-        print("PASS: end-to-end live Patient 360 count increased by 100")
+        # num_patients may be 'random': validate against the count this run actually chose.
+        generate_task = next(
+            t for t in (latest.tasks or []) if t.task_key == "generate_daily_patients"
+        )
+        generate_output = client.jobs.get_run_output(run_id=generate_task.run_id)
+        expected_new = int((generate_output.task_values or {}).get("num_patients"))
+        if after_count - before_count != expected_new:
+            raise RuntimeError(
+                f"Expected +{expected_new} synthetic patients, observed {after_count - before_count}"
+            )
+        print(f"PASS: end-to-end live Patient 360 count increased by {expected_new}")

@@ -87,7 +87,7 @@ class LiveJobUpgradePlanTests(unittest.TestCase):
         self.assertEqual(tasks["generate_daily_patients"]["timeout_seconds"], 1800)
         params = tasks["generate_daily_patients"]["notebook_task"]["base_parameters"]
         self.assertEqual(params["run_id"], "{{job.run_id}}")
-        self.assertEqual(params["num_patients"], "100")
+        self.assertEqual(params["num_patients"], "random")
         self.assertEqual(params["reset_events"], "false")
         self.assertEqual(params["schema"], "careflow360")
         self.assertEqual(tasks["train_ml_model"]["notebook_task"]["base_parameters"]["experiment_path"],
@@ -190,7 +190,8 @@ class LiveJobUpgradePlanTests(unittest.TestCase):
         self.assertIn("client.jobs.list_runs(job_id=JOB_ID, active_only=True, limit=1)", source)
         self.assertIn('"expected_stream_counts_from_manifest"', source)
         self.assertIn('"upsert_policy_chunks"', source)
-        self.assertIn("after_count - before_count != 100", source)
+        self.assertIn('expected_new = int((generate_output.task_values or {}).get("num_patients"))', source)
+        self.assertIn("after_count - before_count != expected_new", source)
 
 
 if __name__ == "__main__":

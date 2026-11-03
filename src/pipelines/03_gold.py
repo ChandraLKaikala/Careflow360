@@ -20,7 +20,7 @@ by notebooks 04_train_triage_model and 05_create_policy_docs in the
 workspace.careflow360_gold presentation schema. The unified quickstart
 uses gold_triage_predictions and gold_policy_chunks instead.
 
-All pipeline tables are in the SDP working schema (careflow360_dab).
+All pipeline tables are in the SDP working schema (careflow360).
 Presentation views in workspace.careflow360_gold expose them to consumers.
 
 Author: CareFlow360 Team

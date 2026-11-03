@@ -250,7 +250,7 @@ class JobParameterTests(unittest.TestCase):
         gen = by["generate_sample_events"]["notebook_task"]["base_parameters"]
         validation = by["validate_project"]["notebook_task"]["base_parameters"]
         self.assertEqual(gen["run_id"], "{{job.run_id}}")
-        self.assertEqual(gen["num_patients"], "100")
+        self.assertEqual(gen["num_patients"], "random")
         self.assertEqual(gen["reset_events"], "false")
         self.assertEqual(validation["expected_run_id"], "{{tasks.generate_sample_events.values.run_id}}")
         self.assertEqual(validation["expected_new_patients"], "{{tasks.generate_sample_events.values.num_patients}}")

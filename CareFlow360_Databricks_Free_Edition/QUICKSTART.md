@@ -50,7 +50,7 @@ Set widgets:
 - `catalog`: your catalog
 - `schema`: `careflow360_dev`
 - `volume`: `landing`
-- `num_patients`: `1200`
+- `num_patients`: `1200` for the initial seed (the scheduled daily job instead uses `random`, inserting a random 50-150 patients per run)
 - `num_batches`: `20`
 - `seconds_between_batches`: `0` for a fast seed, or `5` for a visible real-time replay
 

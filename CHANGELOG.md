@@ -1,5 +1,14 @@
 # CareFlow360 Changelog
 
+## [2026-11-03] - Random Daily Patient Volume and Full-Stack Consistency Sweep
+
+- **Requirement change:** the scheduled generator now runs with `num_patients: "random"` — notebook 01 resolves it to a random 50-150 patients per run (inside the unchanged 50-2000 guard) and publishes the actual count through the run manifest and job task values. Notebook 06 and notebook 08's post-upgrade verification now validate the run's actual inserted count instead of assuming a fixed +100.
+- Live job 484367296292508 ("CareFlow360 Daily Incremental Pipeline") upgraded in place to six tasks; every task description now matches its real purpose (no more copy-pasted "presentation views" descriptions).
+- Notebook 03 now also maintains two dashboard-backed gold analytics assets: `careflow360_gold.triage_model_quality` (predicted-vs-actual acuity view, pure SQL so no per-run AI cost) and `careflow360_gold.chief_complaint_categories` (ai_classify table, built once on demand to protect Free Edition AI-function quota). Both source copies (canonical and DAB mirror) are back in sync with the live notebook, including identifier validation.
+- Pipeline layer docstrings no longer reference the retired `careflow360_dab` working schema (live schema is `careflow360`).
+- DAB `03_jobs.yml`, contract tests (`test_end_to_end_contracts`, `test_incremental_insert_contract`) and QUICKSTART now assert/document the random daily volume; the stale "+100/day" table comment on `careflow360_gold.triage_predictions` was corrected.
+- **No new Databricks resources were created by these changes:** the insert-only contract, 02:00 UTC schedule, pipeline wiring and schema layout are unchanged.
+
 ## [2026-11-01] - Free Edition Notebook and ML Audit
 
 - Reviewed all nine canonical Databricks notebooks, packaged notebook cell, mirrored sources, pipeline layers and job wiring; recorded findings in [Free Edition Notebook Audit](docs/FREE_EDITION_NOTEBOOK_AUDIT.md).

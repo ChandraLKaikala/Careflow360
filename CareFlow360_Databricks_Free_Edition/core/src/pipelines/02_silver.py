@@ -13,7 +13,7 @@ enriched, and SCD2-tracked streaming tables. Key operations:
   - Quarantine table captures rejected records for DQ investigation
   - AUTO CDC with SCD Type 2 for patient location history
 
-All tables are created in the SDP pipeline working schema (careflow360_dab).
+All tables are created in the SDP pipeline working schema (careflow360).
 Presentation views in workspace.careflow360_silver expose these to consumers.
 
 Author: CareFlow360 Team

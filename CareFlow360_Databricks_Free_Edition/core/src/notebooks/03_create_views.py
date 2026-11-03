@@ -1,4 +1,3 @@
-# Databricks notebook source
 """
 CareFlow360 — Create Presentation Views
 =======================================
@@ -10,7 +9,7 @@ This notebook runs as a job task after the pipeline refresh completes.
 
 Parameters (via widgets):
   catalog:          Unity Catalog catalog name (e.g., workspace)
-  pipeline_schema:  SDP pipeline working schema (e.g., careflow360_dab)
+  pipeline_schema:  SDP pipeline working schema (e.g., careflow360)
   bronze_schema:    Bronze presentation schema (e.g., careflow360_bronze)
   silver_schema:    Silver presentation schema (e.g., careflow360_silver)
   gold_schema:      Gold presentation schema (e.g., careflow360_gold)
@@ -77,5 +76,51 @@ for t in gold_tables:
         f"AS SELECT * FROM {CATALOG}.{PIPELINE_SCHEMA}.{t}"
     )
     print(f"  ✓ {GOLD_SCHEMA}.{view_name}")
+
+# ---------------------------------------------------------------------------
+# Gold analytics views on top of notebook-produced physical tables.
+# The CareFlow360 Hospital Operations Dashboard depends on these.
+# ---------------------------------------------------------------------------
+
+# 1) Model quality view: predicted vs actual triage acuity per patient.
+#    Pure SQL over physical tables: no AI-function quota cost per run.
+spark.sql(
+    f"""
+    CREATE OR REPLACE VIEW {CATALOG}.{GOLD_SCHEMA}.triage_model_quality
+    COMMENT 'Per-patient predicted vs actual triage acuity agreement for the live model. Includes in-sample patients; run notebook 09 for holdout-only evaluation.'
+    AS SELECT p.patient_id,
+              p.predicted_triage_acuity,
+              t.triage_acuity AS actual_triage_acuity,
+              CAST(p.predicted_triage_acuity = t.triage_acuity AS INT) AS correct
+    FROM {CATALOG}.{GOLD_SCHEMA}.triage_predictions p
+    JOIN {CATALOG}.{GOLD_SCHEMA}.triage_training t
+      ON p.encounter_id = t.encounter_id
+    """
+)
+print(f"  ✓ {GOLD_SCHEMA}.triage_model_quality")
+
+# 2) AI complaint categories: physical table, created ONCE with ai_classify.
+#    Re-running classification daily would burn Free Edition AI-function
+#    quota, so this only builds when the table is missing. Delete the table
+#    to force a one-off re-classification of new complaints.
+categories_table = f"{CATALOG}.{GOLD_SCHEMA}.chief_complaint_categories"
+if not spark.catalog.tableExists(categories_table):
+    spark.sql(
+        f"""
+        CREATE TABLE {categories_table}
+        COMMENT 'AI-classified clinical category for each distinct ED chief complaint (ai_classify). Synthetic demo data.'
+        AS SELECT chief_complaint_clean,
+                  ai_classify(
+                      chief_complaint_clean,
+                      ARRAY('trauma', 'cardiac', 'respiratory',
+                            'neurological', 'gastrointestinal', 'general')
+                  ) AS clinical_category
+        FROM (SELECT DISTINCT chief_complaint_clean
+              FROM {CATALOG}.{SILVER_SCHEMA}.chief_complaints)
+        """
+    )
+    print(f"  ✓ {GOLD_SCHEMA}.chief_complaint_categories (created)")
+else:
+    print(f"  ✓ {GOLD_SCHEMA}.chief_complaint_categories (already present)")
 
 print("\nAll presentation views created successfully!")

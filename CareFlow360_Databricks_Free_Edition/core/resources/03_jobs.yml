@@ -23,7 +23,7 @@ resources:
               catalog: ${var.catalog}
               schema: ${resources.schemas.pipeline_schema.name}
               volume: ${resources.volumes.landing_volume.name}
-              num_patients: "100"
+              num_patients: "random"
               num_batches: "5"
               # Stable within one job run, unique across scheduled runs.
               # A retry must not silently overwrite previously ingested events.
@@ -90,7 +90,7 @@ resources:
               pipeline_schema: ${resources.schemas.pipeline_schema.name}
               max_snapshot_age_hours: "36"
               # The generator publishes these values after writing its manifest.
-              # If the pipeline deduplicates 100 new IDs down to the old 600,
+              # If the pipeline deduplicates the run's random 50-150 new IDs,
               # the final task FAILS rather than reporting a successful refresh.
               expected_run_id: "{{tasks.generate_sample_events.values.run_id}}"
               expected_new_patients: "{{tasks.generate_sample_events.values.num_patients}}"

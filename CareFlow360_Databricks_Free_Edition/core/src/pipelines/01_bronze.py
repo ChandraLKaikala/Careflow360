@@ -8,7 +8,7 @@ This module implements the BRONZE layer of the CareFlow360 hospital analytics
 lakehouse. Bronze tables are append-only, schema-enforced, and DQ-gated raw
 events ingested via Auto Loader from JSON files in the landing volume.
 
-All tables are created in the SDP pipeline's working schema (careflow360_dab).
+All tables are created in the SDP pipeline's working schema (careflow360).
 Presentation views in workspace.careflow360_bronze expose these tables to
 downstream consumers with proper access control.
 

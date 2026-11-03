@@ -86,9 +86,21 @@ class FakeSparkResult:
         return {"c": "workspace"}
 
 
+class FakeSparkCatalog:
+    """Minimal catalog stub: the gold AI category table already exists, so the
+    quota-guarded ai_classify CREATE TABLE branch is skipped in tests."""
+
+    def __init__(self):
+        self.existing = {"workspace.careflow360_gold.chief_complaint_categories"}
+
+    def tableExists(self, name):
+        return name in self.existing
+
+
 class FakeSpark:
     def __init__(self):
         self.statements = []
+        self.catalog = FakeSparkCatalog()
 
     def sql(self, statement):
         self.statements.append(statement)
@@ -204,8 +216,13 @@ class ViewOutputTests(unittest.TestCase):
                   "gold_schema": "careflow360_gold"}
         execute_code(VIEWS, spark, FakeDbutils(values))
         statements = [x for x in spark.statements if "CREATE OR REPLACE VIEW" in x]
-        self.assertEqual(len(statements), 15)
-        self.assertEqual(len(set(statements)), 15)
+        self.assertEqual(len(statements), 16)
+        self.assertEqual(len(set(statements)), 16)
+        self.assertTrue(any("careflow360_gold.triage_model_quality" in sql
+                            for sql in statements))
+        # The ai_classify category table already exists: its guarded
+        # CREATE TABLE branch must not run (Free Edition AI quota safety).
+        self.assertFalse(any("CREATE TABLE" in x for x in spark.statements))
         self.assertTrue(any("careflow360_gold.patient_360" in sql and
                             "careflow360.gold_patient_360" in sql for sql in statements))
         self.assertTrue(any("careflow360_gold.triage_training" in sql and
@@ -355,7 +372,7 @@ class BundleContractTests(unittest.TestCase):
         self.assertEqual(policy_params["policy_table_name"], "policy_chunks")
         params = by_key["generate_sample_events"]["notebook_task"]["base_parameters"]
         self.assertEqual(params["reset_events"], "false")
-        self.assertEqual(params["num_patients"], "100")
+        self.assertEqual(params["num_patients"], "random")
 
     def test_pipeline_glob_and_source_paths(self):
         cfg = yaml.safe_load((ROOT / "resources/02_pipeline.yml").read_text())
