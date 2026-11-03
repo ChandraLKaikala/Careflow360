@@ -310,34 +310,18 @@ class PolicyOutputTests(unittest.TestCase):
 
 
 class OptionalExtensionContractTests(unittest.TestCase):
-    def test_app_and_genie_use_actual_gold_views(self):
-        ext = ROOT / "CareFlow360_Databricks_Free_Edition/extensions"
-        for extension in ("genie", "app"):
-            bundle = yaml.safe_load((ext / extension / "databricks.yml").read_text())
-            self.assertEqual(bundle["variables"]["schema"]["default"], "careflow360_gold")
-            self.assertEqual(bundle["variables"]["table_prefix"]["default"], "")
-            path = ext / extension / "resources" / f"{extension}.yml"
-            text = path.read_text(encoding="utf-8")
-            self.assertIn("${var.table_prefix}patient_360", text)
-            self.assertNotIn("${var.schema}.gold_patient_360", text)
-        for extension in ("ai_search", "model_serving"):
-            bundle = yaml.safe_load((ext / extension / "databricks.yml").read_text())
-            self.assertEqual(bundle["variables"]["schema"]["default"], "careflow360_gold")
-        search_bundle = yaml.safe_load((ext / "ai_search/databricks.yml").read_text())
-        self.assertEqual(search_bundle["variables"]["table_prefix"]["default"], "")
-        search_resource = (ext / "ai_search/resources/ai_search.yml").read_text()
-        self.assertIn("${var.schema}.${var.table_prefix}policy_chunks", search_resource)
-        self.assertNotIn("${var.schema}.gold_policy_chunks", search_resource)
-        genie = yaml.safe_load((ext / "genie/resources/genie.yml").read_text())
-        serialized = json.loads(genie["resources"]["genie_spaces"]["careflow_genie"]["serialized_space"])
-        self.assertEqual(len(serialized["data_sources"]["tables"]), 5)
-        instructions = " ".join(
-            " ".join(x["content"]) for x in serialized["instructions"]["text_instructions"]
-        )
-        self.assertIn("never show patient identifiers", instructions)
+    def test_streamlit_app_uses_actual_gold_views(self):
+        ext = ROOT / "extensions"
+        bundle = yaml.safe_load((ext / "app" / "databricks.yml").read_text())
+        self.assertEqual(bundle["variables"]["schema"]["default"], "careflow360_gold")
+        self.assertEqual(bundle["variables"]["table_prefix"]["default"], "")
+        path = ext / "app" / "resources" / "app.yml"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("${var.table_prefix}patient_360", text)
+        self.assertNotIn("${var.schema}.gold_patient_360", text)
 
     def test_dashboard_sql_pack_is_aggregate_only(self):
-        sql = (ROOT / "CareFlow360_Databricks_Free_Edition/core/sql/dashboard_queries.sql").read_text()
+        sql = (ROOT / "sql/dashboard_queries.sql").read_text()
         self.assertIn("ORDER BY snapshot_ts DESC", sql)
         self.assertNotIn("SELECT patient_id", sql)
         self.assertIn("GROUP BY DATE_TRUNC('HOUR', event_ts), source", sql)

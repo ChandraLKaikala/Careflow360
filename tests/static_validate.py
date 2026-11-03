@@ -6,8 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-PACKAGE = Path(__file__).resolve().parents[1]
-REPO = PACKAGE.parent
+REPO = Path(__file__).resolve().parents[1]
 
 
 def check_python():
@@ -22,7 +21,7 @@ def check_python():
 
 def check_notebooks():
     errors = []
-    for root in (REPO / "src/notebooks", PACKAGE / "core/src/notebooks"):
+    for root in (REPO / "src/notebooks",):
         for path in root.glob("*.py"):
             text = path.read_text(encoding="utf-8")
             if not text.startswith("# Databricks notebook source"):
@@ -43,36 +42,6 @@ def check_notebooks():
     return errors
 
 
-def check_mirrors():
-    errors = []
-    mirrored = [
-        "databricks.yml", "resources/01_uc.yml", "resources/02_pipeline.yml",
-        "resources/03_jobs.yml",
-        "src/notebooks/00_preflight.py", "src/notebooks/01_generate_sample_data.py",
-        "src/notebooks/03_create_views.py", "src/notebooks/04_train_triage_model.py",
-        "src/notebooks/05_create_policy_docs.py", "src/notebooks/06_validate.py",
-        "src/notebooks/08_upgrade_existing_daily_job.py",
-        "src/notebooks/09_compare_free_edition_models.py",
-        "src/pipelines/01_bronze.py", "src/pipelines/02_silver.py",
-        "src/pipelines/03_gold.py",
-    ]
-    for relative in mirrored:
-        left = REPO / relative
-        right = PACKAGE / "core" / relative
-        if not left.is_file() or not right.is_file():
-            errors.append(f"Mirror missing: {relative}")
-        elif left.read_bytes() != right.read_bytes():
-            errors.append(f"Repository and Free Edition package differ: {relative}")
-    notebook = PACKAGE / "core/src/notebooks/03_create_views.ipynb"
-    source = (PACKAGE / "core/src/notebooks/03_create_views.py").read_text(encoding="utf-8")
-    if notebook.is_file():
-        actual = json.loads(notebook.read_text(encoding="utf-8"))
-        cells = [c for c in actual["cells"] if c["cell_type"] == "code"]
-        if len(cells) != 1 or "".join(cells[0]["source"]) != source.removeprefix("# Databricks notebook source\n"):
-            errors.append("03_create_views.ipynb code cell differs from .py script")
-    return errors
-
-
 def check_incremental_contract():
     errors = []
     script = (REPO / "src/notebooks/01_generate_sample_data.py").read_text(encoding="utf-8")
@@ -83,7 +52,7 @@ def check_incremental_contract():
     if 'dbutils.fs.put(f"{manifest_dir}/{run_id}.json"' not in script:
         errors.append("A per-run replay manifest must be preserved")
     job = (REPO / "resources/03_jobs.yml").read_text(encoding="utf-8")
-    if 'reset_events: "false"' not in job or 'num_patients: "100"' not in job:
+    if 'reset_events: "false"' not in job or 'num_patients: "random"' not in job:
         errors.append("DAB job must use safe daily append parameters")
     model = (REPO / "src/notebooks/04_train_triage_model.py").read_text(encoding="utf-8")
     if "presentation_source" not in model or "prediction_table" not in model:
@@ -112,7 +81,7 @@ def check_yaml_and_payloads():
 
 def main():
     errors = []
-    for task in (check_python, check_notebooks, check_mirrors,
+    for task in (check_python, check_notebooks,
                  check_incremental_contract, check_yaml_and_payloads):
         errors.extend(task())
     if errors:
@@ -121,7 +90,7 @@ def main():
             print("FAIL:", error)
         return 1
     print("CAREFlow360 STATIC VALIDATION PASSED")
-    print("Python AST, notebook cells, YAML, mirror, and replay contracts verified.")
+    print("Python AST, notebook cells, YAML, and replay contracts verified.")
     print("Databricks runtime, schedules, permissions and deployment are not tested here.")
     return 0
 

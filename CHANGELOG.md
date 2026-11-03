@@ -1,5 +1,15 @@
 # CareFlow360 Changelog
 
+## [2026-11-03] - Repository Cleanup: Single Canonical Source Tree
+
+- **Removed the duplicated `CareFlow360_Databricks_Free_Edition/` folder** (60 tracked files): its `core/` tree mirrored the root `src/`, `resources/` and `docs/` copies, and it carried template boilerplate (`UPLOAD_FIRST.txt`, `BUILD_INFO.txt`, `SETUP_COMMANDS.md`, `KAGGLE_DATA.md.bak`) plus four unused extension stubs (`genie`, `ai_search`, `model_serving`, `lakebase`) for features that are not available on Databricks Free Edition and were never deployed. All history remains recoverable via Git.
+- **Salvaged the genuinely useful unique content to the root:** `LICENSE`, `QUICKSTART.md`, `.gitignore`, `tests/static_validate.py` (CI runs it), `core/sql/` → `sql/`, the Streamlit command center → `extensions/app/`, and five project-relevant docs (`ARCHITECTURE`, `TROUBLESHOOTING`, `INTERVIEW_TALK_TRACK`, `FREE_EDITION_SCOPE`, `DASHBOARD_GENIE`) → `docs/`.
+- **CI + tests updated for the new layout:** the mirror-equality checks in `static_validate.py` and five test files were retired; extension/SQL/app paths now point at `extensions/app` and `sql/`. CI runs `python tests/static_validate.py` directly.
+- **Fixed a latent CI-breaking bug:** `static_validate.py` still required `num_patients: "100"` in the DAB job (it would have failed since the random-volume change); it now requires `num_patients: "random"`.
+- **Fixed a second latent CI bug:** `src/notebooks/03_create_views.py` (both repo and live workspace copies) had lost its `# Databricks notebook source` header during the analytics-views update; header restored.
+- **Docs sweep:** README daily-pipeline section rewritten for the random 50-150 volume and current live status (six tasks, 1,000 patients, insert-only); README File Structure reflects the final layout; QUICKSTART paths updated (`src/notebooks`, `sql/`, no `cd core`, no ZIP-import reference) and its Genie/model-serving/lakebase/ai-search extension list replaced with the Streamlit app; `DASHBOARD_GENIE`, `DATABRICKS_WORKSPACE_SYNC`, `END_TO_END_VERIFICATION` (16 views), `FREE_EDITION_NOTEBOOK_AUDIT` and the app README no longer reference removed paths.
+- **Validation:** full offline suite green (56 passed) and `static_validate.py` passes on the cleaned tree. Live job 484367296292508, pipeline dde7c33b and the workspace folders were not modified by this cleanup (only the duplicated mirror copy inside the Git folder was removed).
+
 ## [2026-11-03] - Random Daily Patient Volume and Full-Stack Consistency Sweep
 
 - **Requirement change:** the scheduled generator now runs with `num_patients: "random"` — notebook 01 resolves it to a random 50-150 patients per run (inside the unchanged 50-2000 guard) and publishes the actual count through the run manifest and job task values. Notebook 06 and notebook 08's post-upgrade verification now validate the run's actual inserted count instead of assuming a fixed +100.

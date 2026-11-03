@@ -41,7 +41,7 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 
 ## Optional SQL Command Center App
 
-The [Databricks Streamlit App](CareFlow360_Databricks_Free_Edition/extensions/app/README.md)
+The [Databricks Streamlit App](extensions/app/README.md)
 provides an aggregate-only operations overview with validated Unity Catalog
 resource bindings, a 2-minute result cache, and 7-day/100-group bounded
 alert and ADT flow queries. This extension is **not deployed by GitHub CI**,
@@ -103,26 +103,16 @@ See [the notebook-by-notebook Free Edition audit](docs/FREE_EDITION_NOTEBOOK_AUD
 ```
 Careflow360/
 ├── databricks.yml              # Main DAB config
-├── resources/
-│   ├── 01_uc.yml              # UC schema definitions
-│   ├── 02_pipeline.yml        # SDP pipeline config
-│   └── 03_jobs.yml            # Job orchestration
-└── src/
-    ├── pipelines/
-    │   ├── 01_bronze.py       # Bronze ingestion
-    │   ├── 02_silver.py        # Silver cleansing
-    │   └── 03_gold.py          # Gold aggregation
-    └── notebooks/
-        ├── 00_preflight.py
-        ├── 01_generate_sample_data.py
-        ├── 02_kaggle_normalize.py
-        ├── 03_create_views.py
-        ├── 04_train_triage_model.py
-        ├── 05_create_policy_docs.py
-        ├── 06_validate.py
-        ├── 07_ai_functions.py
-        ├── 08_upgrade_existing_daily_job.py
-        └── 09_compare_free_edition_models.py
+├── QUICKSTART.md               # Unified-quickstart walkthrough (careflow360_dev)
+├── resources/                  # DAB resources (UC schemas, pipeline, 6-task job)
+├── src/
+│   ├── pipelines/              # 01_bronze / 02_silver / 03_gold pipeline sources
+│   └── notebooks/              # 00_preflight … 09_compare_free_edition_models
+├── sql/                        # Unified-quickstart SQL (setup, dashboard queries, Genie benchmarks, validation)
+├── tests/                      # Offline contract tests + static_validate.py (CI)
+├── extensions/app/             # Optional Streamlit command center app
+├── docs/                       # Architecture, audits, verification, interview prep
+└── presentations/              # Portfolio presentation notebooks
 ```
 
 ## Technologies
@@ -143,16 +133,16 @@ Portfolio/demo project. All data is synthetic.
 ### Automated Data Growth (after deploying updated GitHub code)
 
 - **Schedule defined in GitHub:** Daily at 2:00 AM UTC
-- **Existing Databricks job ID:** `484367296292508` (still using an older 4-task configuration until synchronized)
-- **New patient count per scheduled run:** 100 *if* all records are accepted and the pipeline completes
+- **Existing Databricks job ID:** `484367296292508` — upgraded in place to the six-task configuration (verified 2026-11-03)
+- **New patient count per scheduled run:** a random 50–150 patients (`num_patients: "random"`; the generator notebook resolves it within its unchanged 50–2000 guard and publishes the actual count through the run manifest and job task values)
 - **Unique keys:** `P<job_run_id>-<patient_number>` for every new batch, preventing reuse of legacy patient IDs
 - **Ingestion:** append-only JSON landing files; Bronze and Silver retain events; Patient 360 materialized view gains a row for every unseen patient ID
 - **ML predictions:** insert-only Delta MERGE, preserving existing patient predictions and inserting one for each new patient
-- **Validation:** the six-task GitHub job reads the immutable per-run manifest, verifies every event stream's row counts through Bronze and Silver and requires 100 new patients in Gold Patient 360 and predictions
+- **Validation:** the six-task job reads the immutable per-run manifest, verifies every event stream's row counts through Bronze and Silver, and requires exactly the run's actual new-patient count in Gold Patient 360 and predictions
 
-**Known live baseline:** 600 unique patients as measured on November 1, 2026. A properly deployed and validated 100-patient scheduled run should produce **700 patients**, then **800 after a second distinct run**. This is an *expected acceptance test*, not a claim that the existing workspace has been upgraded or that each scheduled run always fires.
+**Live status (verified 2026-11-03):** the workspace job was upgraded in place to six tasks and validated end to end; Gold Patient 360 and predictions both reached 1,000 patients across 600→700→800→900→1000 daily increments, all insert-only (zero updates or deletes).
 
-The live job presently reuses legacy patient IDs and has missed scheduled dates. GitHub CI tests cannot fix that until the new notebook code and task definition are deployed safely to the existing workspace. See [workspace synchronization](docs/DATABRICKS_WORKSPACE_SYNC.md) and [end-to-end acceptance checks](docs/END_TO_END_VERIFICATION.md).
+The notebook sources in this repository are the GitHub source of truth; the live workspace job runs mirrored copies under `/Users/<user>/CareFlow360_Databricks_Free_Edition`. See [workspace synchronization](docs/DATABRICKS_WORKSPACE_SYNC.md) and [end-to-end acceptance checks](docs/END_TO_END_VERIFICATION.md).
 
 ---
 

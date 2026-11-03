@@ -47,7 +47,7 @@ are validated before use in SQL. No access token is embedded in source code.
 
 ```bash
 python -m unittest discover -s tests -p 'test_*.py' -v
-python CareFlow360_Databricks_Free_Edition/tests/static_validate.py
+python tests/static_validate.py
 ```
 
 Offline tests cover SQL query construction, resource validation and repository

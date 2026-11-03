@@ -17,17 +17,17 @@ This page distinguishes **offline source checks** from **actual Databricks works
 Run:
 
 ```bash
-python CareFlow360_Databricks_Free_Edition/tests/static_validate.py
+python tests/static_validate.py
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
 Required test categories:
 
 1. Syntax: all Python scripts and individual Databricks Python cells parse; notebook JSON and YAML are valid.
-2. Package parity: root DAB and Free Edition/core mirrored files are identical; the `.ipynb` cell matches the presentation-view script.
+2. Source integrity: the single `src/` tree is the canonical source; the former root/package mirror check was retired when the duplicate Free Edition copy was removed (2026-11-03).
 3. Generator outputs: 2 append runs of 50 synthetic patients give 100 distinct triage/patient identifiers, matching chief-complaint counts, admissible acuities, expected ADT types, valid vitals, historical timestamps, and separate manifests.
 4. Generator safety: destructive reset is rejected; event files cannot be overwritten; duplicate run IDs and interrupted-run files cannot be replayed; a 1,200-patient/20-batch replay produces no future-dated ADT events.
-5. Presentation views: expected 15 views target the correct pipeline source names, with invalid Unity Catalog identifiers rejected.
+5. Presentation views: expected 16 views target the correct pipeline source names, with invalid Unity Catalog identifiers rejected.
 6. Gold pipeline graph: all table dependencies exist; exactly 15 declared datasets including CDC SCD Type 2.
 7. Policy documents: only fabricated synthetic policy chunks with unique IDs; first creation uses an explicit Delta write and subsequent refreshes MERGE only new/changed chunks, preserving the Delta table's identity and Change Data Feed history.
 8. Model algorithm: feature schema and hyperparameters match the notebook; a local scikit-learn model fits and emits valid 1–5 predictions; **GroupShuffleSplit holds out whole patient IDs** with no train/test overlap; a stable-hash, capped sample prevents unbounded pandas collection; logging includes a dummy-classifier baseline and balanced accuracy; only newly unscored current patients are collected. This does not test the Databricks MLflow registry.

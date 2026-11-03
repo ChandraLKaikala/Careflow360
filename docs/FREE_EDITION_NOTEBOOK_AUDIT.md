@@ -51,7 +51,7 @@ Official documentation:
 
 Offline CI runs:
 
-    python CareFlow360_Databricks_Free_Edition/tests/static_validate.py
+    python tests/static_validate.py
     python -m unittest discover -s tests -p 'test_*.py' -v
 
 **Remaining live acceptance:** Read the [deployment-safe workspace sync plan](DATABRICKS_WORKSPACE_SYNC.md) and [runtime verification checklist](END_TO_END_VERIFICATION.md). Pull updated GitHub main into the *existing* Databricks Git folder; run the in-place upgrade helper in dry-run; verify checkpoint compatibility and run counts; then run any explicitly authorized job update. GitHub CI alone does not deploy code, prove MLflow model registration or confirm production runtime reliability.

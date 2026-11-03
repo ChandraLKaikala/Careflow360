@@ -8,9 +8,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PIPELINES = ROOT / "src/pipelines"
-NOTEBOOKS = [ROOT / "src/notebooks",
-             ROOT / "CareFlow360_Databricks_Free_Edition/core/src/notebooks",
-             ROOT / "presentations"]
+NOTEBOOKS = [ROOT / "src/notebooks", ROOT / "presentations"]
 
 
 def constant_string(node):

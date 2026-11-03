@@ -10,7 +10,7 @@ import unittest
 
 HELPERS = (
     pathlib.Path(__file__).resolve().parents[1]
-    / "CareFlow360_Databricks_Free_Edition/extensions/app/src/app_helpers.py"
+    / "extensions/app/src/app_helpers.py"
 )
 spec = importlib.util.spec_from_file_location("app_helpers", HELPERS)
 app_helpers = importlib.util.module_from_spec(spec)

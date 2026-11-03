@@ -11,7 +11,6 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 HELPER = ROOT / "src/notebooks/08_upgrade_existing_daily_job.py"
-MIRROR = ROOT / "CareFlow360_Databricks_Free_Edition/core/src/notebooks/08_upgrade_existing_daily_job.py"
 PIPELINE_ID = "dde7c33b-8715-4666-8f6b-ad2af0848966"
 
 
@@ -175,9 +174,8 @@ class LiveJobUpgradePlanTests(unittest.TestCase):
         )
         self.assertEqual(len(guard(glob_spec, root)), 1)
 
-    def test_notebook_is_mirrored_and_script_is_dry_run_first(self):
+    def test_script_is_dry_run_first(self):
         source = HELPER.read_text(encoding="utf-8")
-        self.assertEqual(source, MIRROR.read_text(encoding="utf-8"))
         self.assertIn('dbutils.widgets.dropdown("apply_changes", "false"', source)
         self.assertIn('dbutils.widgets.dropdown("verify_with_new_run", "false"', source)
         self.assertIn("client.jobs.update(", source)

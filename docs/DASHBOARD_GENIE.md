@@ -2,7 +2,7 @@
 
 ## Dashboard
 
-Use the SQL datasets in `core/sql/dashboard_queries.sql` to create a dashboard named:
+Use the SQL datasets in `sql/dashboard_queries.sql` to create a dashboard named:
 
 **CareFlow360 — Hospital Command Center**
 
@@ -19,7 +19,7 @@ Add filters for department and event hour where applicable.
 
 ## Genie Agent
 
-The deployable Genie bundle is under `extensions/genie/`.
+The former Genie bundle was removed from this repository (it was never part of the Free Edition deployment); create the Genie space manually from the datasets above if your workspace has Genie.
 
 Recommended questions:
 
@@ -29,7 +29,7 @@ Recommended questions:
 - Compare admission, transfer and discharge events by hour.
 - What is the triage-acuity mix by department?
 
-Use `core/sql/genie_benchmarks.sql` to independently verify Genie answers.
+Use `sql/genie_benchmarks.sql` to independently verify Genie answers.
 
 ## Guardrail instruction
 

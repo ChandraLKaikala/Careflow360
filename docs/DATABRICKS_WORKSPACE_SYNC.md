@@ -21,8 +21,8 @@ will not update the existing job or activate that schedule**.
 
 ## Step 1 — Merge only after the pull request checks pass
 
-Review the diff and CI. The repository contains both root `src/`, `resources/` and a packaged
-`CareFlow360_Databricks_Free_Edition/core/` mirror; the integrity test checks these stay identical.
+Review the diff and CI. The repository keeps a single canonical source tree (`src/`, `resources/`); the former
+`CareFlow360_Databricks_Free_Edition/core/` mirror was removed from the repository on 2026-11-03.
 
 ## Step 2 — Sync code, not live data
 
@@ -156,7 +156,7 @@ the pipeline without understanding checkpoint/table effects.
 
 ## Verification boundaries
 
-- GitHub CI now verifies Python source/cells, YAML, root/package mirrors, synthetic JSON event counts/unique IDs/timestamps, modeled ML feature/prediction shape, notebook output contracts and job dependencies, **not** actual Spark/Lakeflow or MLflow registry execution.
+- GitHub CI now verifies Python source/cells, YAML, synthetic JSON event counts/unique IDs/timestamps, modeled ML feature/prediction shape, notebook output contracts and job dependencies, **not** actual Spark/Lakeflow or MLflow registry execution.
 - Current ChatGPT Databricks connection supports Genie read-only analysis and AI/BI dashboard
   APIs; it cannot update Jobs or workspace notebooks or initiate pipeline runs.
 - Full validation requires a successful controlled workspace run and comparison of resulting tables.

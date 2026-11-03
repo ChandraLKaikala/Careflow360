@@ -48,7 +48,7 @@ This repository therefore:
 
 ## Reviewed notebook and pipeline implementation
 
-See [the source-by-source Free Edition audit](../../docs/FREE_EDITION_NOTEBOOK_AUDIT.md). Offline checks do not verify whether the existing Databricks pipeline checkpoints can safely adopt a different stateful deduplication operator. Such a migration must be tested separately; do not reset state or full-refresh the production-like demo solely for optimization.
+See [the source-by-source Free Edition audit](FREE_EDITION_NOTEBOOK_AUDIT.md). Offline checks do not verify whether the existing Databricks pipeline checkpoints can safely adopt a different stateful deduplication operator. Such a migration must be tested separately; do not reset state or full-refresh the production-like demo solely for optimization.
 
 ## Not a production compliance environment
 

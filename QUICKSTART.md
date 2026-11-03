@@ -6,17 +6,16 @@ This path works without downloading any external dataset.
 
 This GitHub repository contains project sources, **not** a prebuilt ZIP archive.
 Use a Databricks **Git folder** linked to this GitHub repository (recommended), then
-check out a reviewed branch or pull the merged `main` branch. Alternatively, create
-and import your own ZIP from the `CareFlow360_Databricks_Free_Edition` directory.
+check out a reviewed branch or pull the merged `main` branch.
 
 **Existing CareFlow360 workspace:** Before connecting code to any already-deployed job
-or pipeline, read [the workspace sync runbook](../docs/DATABRICKS_WORKSPACE_SYNC.md).
+or pipeline, read [the workspace sync runbook](docs/DATABRICKS_WORKSPACE_SYNC.md).
 Pulling Git files does not automatically change the existing daily job or its tasks.
 Do not create a second pipeline by deploying a fresh, unbound bundle.
 
 ## 2. Discover your catalog
 
-Open `core/src/notebooks/00_preflight.py` as a notebook and run it on serverless compute.
+Open `src/notebooks/00_preflight.py` as a notebook and run it on serverless compute.
 
 Or execute in SQL Editor:
 
@@ -28,7 +27,7 @@ Copy the returned catalog name. The examples below call it `<CATALOG>`.
 
 ## 3. Create the project schema and volume
 
-Run `core/sql/00_setup.sql` after replacing `<CATALOG>`.
+Run `sql/00_setup.sql` after replacing `<CATALOG>`.
 
 Minimum commands:
 
@@ -42,7 +41,7 @@ CREATE VOLUME IF NOT EXISTS careflow360_dev.landing;
 
 Run:
 
-`core/src/notebooks/01_generate_sample_data.py`
+`src/notebooks/01_generate_sample_data.py`
 
 Set widgets:
 
@@ -104,7 +103,7 @@ The graph should build Bronze, Silver and Gold assets plus the SCD2 location-his
 
 Run:
 
-`core/src/notebooks/04_train_triage_model.py`
+`src/notebooks/04_train_triage_model.py`
 
 with:
 
@@ -119,21 +118,19 @@ This tracks the experiment in MLflow, registers a Unity Catalog model and writes
 
 Run:
 
-`core/src/notebooks/06_validate.py`
+`src/notebooks/06_validate.py`
 
 It checks required tables, row counts and basic Gold-layer invariants.
 
 ## 8. Build AI/BI dashboard
 
-Open `core/sql/dashboard_queries.sql` in SQL Editor, replace `<CATALOG>`, and use the result sets to create the dashboard described in `docs/DASHBOARD_GENIE.md`.
+Open `sql/dashboard_queries.sql` in SQL Editor, replace `<CATALOG>`, and use the result sets to create the dashboard described in `docs/DASHBOARD_GENIE.md`.
 
 ## 9. Deploy with DAB instead of UI
 
 Once the manual path works, use the production-style deployment:
 
 ```bash
-cd core
-
 databricks bundle validate --var="catalog=<CATALOG>"
 databricks bundle deploy -t dev --var="catalog=<CATALOG>"
 databricks bundle run -t dev careflow360_job --var="catalog=<CATALOG>"
@@ -145,14 +142,8 @@ databricks bundle run -t dev careflow360_job --var="catalog=<CATALOG>"
 
 Follow `docs/KAGGLE_DATA.md`. Do not redistribute Kaggle files with this repository; download them yourself under their respective licenses and upload them into the project volume.
 
-## 11. Add optional latest-feature extensions
+## 11. Optional extensions
 
-Deploy these after the core is healthy:
+Deploy the [Streamlit command center app](extensions/app/README.md) after the core is healthy. It contains its own README because some resources need workspace-specific IDs or feature availability.
 
-- `extensions/genie`
-- `extensions/ai_search`
-- `extensions/model_serving`
-- `extensions/app`
-- `extensions/lakebase`
-
-Each folder contains its own README because some resources need workspace-specific IDs or feature availability.
+The former `genie`, `ai_search`, `model_serving`, and `lakebase` template bundles were removed from this repository: those features are not available on Databricks Free Edition and were never part of the deployed project.

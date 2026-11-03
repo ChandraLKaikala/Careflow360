@@ -20,12 +20,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 GOLD = ROOT / "src/pipelines/03_gold.py"
-MIRROR_GOLD = ROOT / "CareFlow360_Databricks_Free_Edition/core/src/pipelines/03_gold.py"
 BENCH = ROOT / "src/notebooks/09_compare_free_edition_models.py"
-MIRROR_BENCH = (
-    ROOT / "CareFlow360_Databricks_Free_Edition/core/src/notebooks/"
-    "09_compare_free_edition_models.py"
-)
 NUMERIC = [
     "age", "systolic_bp", "diastolic_bp", "heart_rate",
     "respiratory_rate", "temperature_c", "spo2", "gcs_total",
@@ -45,7 +40,6 @@ def extract_functions(path, names, context):
 class GoldEncounterSafetyTests(unittest.TestCase):
     def test_gold_live_patient_data_joins_by_patient_and_encounter(self):
         source = GOLD.read_text(encoding="utf-8")
-        self.assertEqual(source, MIRROR_GOLD.read_text(encoding="utf-8"))
         tree = ast.parse(source)
         gold = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
                     and n.name == "gold_patient_360")
@@ -114,7 +108,6 @@ class FreeEditionModelComparisonTests(unittest.TestCase):
         )
 
     def test_every_comparison_cell_and_mirror_are_identical(self):
-        self.assertEqual(BENCH.read_bytes(), MIRROR_BENCH.read_bytes())
         for i, cell in enumerate(BENCH.read_text().split("# COMMAND ----------")):
             ast.parse(cell, filename=f"model_compare:{i}")
         source = BENCH.read_text()
