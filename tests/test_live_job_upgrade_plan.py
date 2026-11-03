@@ -196,6 +196,11 @@ class LiveJobUpgradePlanTests(unittest.TestCase):
             source,
         )
         self.assertIn('expected_new = int(manifest["num_patients"])', source)
+        # The generator manifest stores run_id as a STRING while the SDK's
+        # result.run_id is an int: the comparison must coerce via str() or
+        # every verification run falsely reports a manifest mismatch.
+        self.assertIn('manifest.get("run_id") != str(result.run_id)', source)
+        self.assertNotIn('manifest.get("run_id") != result.run_id', source)
         self.assertNotIn("generate_output.task_values", source)
         self.assertIn("after_count - before_count != expected_new", source)
 

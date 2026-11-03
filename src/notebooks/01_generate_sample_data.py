@@ -127,6 +127,33 @@ BED_POOLS = {
 }
 
 
+def open_beds_sql(table_name, cutoff):
+    """Occupied-bed query: rank ALL ADT events first, filter beds second.
+
+    ROW_NUMBER must run over every event of an encounter — including
+    A03_DISCHARGE rows, whose bed_id is NULL — BEFORE any occupied-bed
+    filtering. Pre-filtering rows inside the ranking subquery (for example
+    dropping NULL-bed discharge rows or events older than the cutoff)
+    promotes an earlier admit/transfer row to "latest event" for
+    discharged encounters and locks their beds as occupied forever. The
+    occupied-bed filters apply only to each encounter's ranked latest row
+    (rn = 1): not discharged, still holds a bed, and recent enough.
+    """
+    return f"""
+        SELECT DISTINCT bed_id AS bed FROM (
+            SELECT patient_id, encounter_id, bed_id, event_type, event_ts,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY patient_id, encounter_id
+                       ORDER BY event_ts DESC
+                   ) AS rn
+            FROM {table_name}
+        ) WHERE rn = 1
+          AND event_type != 'A03_DISCHARGE'
+          AND bed_id IS NOT NULL
+          AND event_ts >= TIMESTAMP '{cutoff}'
+        """
+
+
 def load_open_beds():
     """Beds still occupied by an open encounter in the live pipeline.
 
@@ -146,19 +173,7 @@ def load_open_beds():
         try:
             if not spark.catalog.tableExists(table_name):
                 continue
-            rows = spark.sql(
-                f"""
-                SELECT DISTINCT bed_id AS bed FROM (
-                    SELECT patient_id, encounter_id, bed_id, event_type, event_ts,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY patient_id, encounter_id
-                               ORDER BY event_ts DESC
-                           ) AS rn
-                    FROM {table_name}
-                    WHERE bed_id IS NOT NULL AND event_ts >= TIMESTAMP '{cutoff}'
-                ) WHERE rn = 1 AND event_type != 'A03_DISCHARGE'
-                """
-            ).collect()
+            rows = spark.sql(open_beds_sql(table_name, cutoff)).collect()
             return {row["bed"] for row in rows}
         except Exception as exc:
             print(

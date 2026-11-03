@@ -34,6 +34,21 @@ class Column:
     def __gt__(self, value):
         return ("gt", self.name, value)
 
+    def isNull(self):
+        return NullCheck(self.name)
+
+
+class NullCheck:
+    """Fake Column.isNull() supporting the __or__ used by the null-key
+    prediction-grain check in 06_validate."""
+
+    def __init__(self, name):
+        self.name = name
+
+    def __or__(self, other):
+        assert isinstance(other, NullCheck)
+        return ("isnull_or", self.name, other.name)
+
 
 class Aggregate:
     def __init__(self, expression):
@@ -68,6 +83,9 @@ class FakeTable:
             return FakeTable([r for r in self.rows if r[column].startswith(value)])
         if operation == "gt":
             return FakeTable([r for r in self.rows if r[column] > value])
+        if operation == "isnull_or":
+            return FakeTable([r for r in self.rows
+                              if r[column] is None or r[value] is None])
         raise ValueError(predicate)
 
     def agg(self, *args):
@@ -282,6 +300,41 @@ class JobParameterTests(unittest.TestCase):
         self.assertEqual(validation["expected_new_patients"], "{{tasks.generate_sample_events.values.num_patients}}")
         self.assertIn('taskValues.set(key="run_id"', GENERATOR_PATH.read_text())
         self.assertIn('taskValues.set(key="num_patients"', GENERATOR_PATH.read_text())
+
+
+class PredictionPairGrainTests(unittest.TestCase):
+    def check(self, rows):
+        spark = FakeSpark({"workspace.careflow360_gold.triage_predictions": rows})
+        verify = function_from_notebook(
+            VALIDATION_PATH, "verify_prediction_pair_grain",
+            {"spark": spark, "F": Functions},
+        )
+        return verify("workspace.careflow360_gold.triage_predictions")
+
+    def test_same_patient_multiple_encounters_is_valid_history(self):
+        rows = [
+            {"patient_id": "P1", "encounter_id": "E1", "predicted_triage_acuity": 3},
+            # A returning patient keeps predictions for earlier encounters.
+            {"patient_id": "P1", "encounter_id": "E2", "predicted_triage_acuity": 4},
+            # encounter_id alone is not unique across patients: the composite
+            # key is what must be unique.
+            {"patient_id": "P2", "encounter_id": "E1", "predicted_triage_acuity": 2},
+        ]
+        self.assertEqual(self.check(rows), [])
+
+    def test_duplicate_pair_is_reported(self):
+        rows = [
+            {"patient_id": "P1", "encounter_id": "E1", "predicted_triage_acuity": 3},
+            {"patient_id": "P1", "encounter_id": "E1", "predicted_triage_acuity": 4},
+        ]
+        self.assertTrue(any("duplicate" in f for f in self.check(rows)))
+
+    def test_null_keys_are_reported(self):
+        rows = [
+            {"patient_id": "P1", "encounter_id": "E1", "predicted_triage_acuity": 3},
+            {"patient_id": None, "encounter_id": "E9", "predicted_triage_acuity": 3},
+        ]
+        self.assertTrue(any("null" in f for f in self.check(rows)))
 
 
 if __name__ == "__main__":

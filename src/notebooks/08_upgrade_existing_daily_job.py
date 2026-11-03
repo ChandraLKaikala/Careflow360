@@ -320,7 +320,10 @@ else:
         # authoritative source 06_validate uses.
         manifest_path = f"/Volumes/workspace/{SCHEMA}/landing/manifests/{result.run_id}.json"
         manifest = json.loads(dbutils.fs.head(manifest_path, 65536))
-        if manifest.get("run_id") != result.run_id:
+        # manifest["run_id"] is a string; the SDK's result.run_id is an int.
+        # Compare as strings, or every verification run falsely reports a
+        # generator-manifest mismatch.
+        if manifest.get("run_id") != str(result.run_id):
             raise RuntimeError(
                 f"Generator manifest {manifest_path} does not match run {result.run_id}"
             )

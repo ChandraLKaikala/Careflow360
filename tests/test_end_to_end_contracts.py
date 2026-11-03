@@ -226,6 +226,14 @@ class ViewOutputTests(unittest.TestCase):
         self.assertEqual(len(set(statements)), 17)
         self.assertTrue(any("careflow360_gold.triage_model_quality" in sql
                             for sql in statements))
+        quality_view = next(sql for sql in statements if "triage_model_quality" in sql)
+        # Encounter-grain join: predictions must match training rows on BOTH
+        # keys. Joining on encounter_id alone fans out patients who have
+        # several encounters in triage_training.
+        self.assertIn(
+            "ON p.patient_id = t.patient_id AND p.encounter_id = t.encounter_id",
+            quality_view,
+        )
         self.assertTrue(any("careflow360_gold.triage_predictions_current" in sql
                             for sql in statements))
         # The ai_classify category table already exists: its guarded

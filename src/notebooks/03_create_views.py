@@ -101,7 +101,7 @@ if spark.catalog.tableExists(predictions_table):
                   CAST(p.predicted_triage_acuity = t.triage_acuity AS INT) AS correct
         FROM {CATALOG}.{GOLD_SCHEMA}.triage_predictions p
         JOIN {CATALOG}.{GOLD_SCHEMA}.triage_training t
-          ON p.encounter_id = t.encounter_id
+          ON p.patient_id = t.patient_id AND p.encounter_id = t.encounter_id
         """
     )
     print(f"  ✓ {GOLD_SCHEMA}.triage_model_quality")

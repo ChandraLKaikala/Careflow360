@@ -274,5 +274,62 @@ class EncounterLifecycleTests(unittest.TestCase):
         self.assertGreater(assigned, 0)
 
 
+class LoadOpenBedsRankingTests(unittest.TestCase):
+    """The occupied-bed query must rank ALL ADT events per encounter first
+    and only then filter the latest row. A03_DISCHARGE rows carry
+    bed_id=None, so any pre-filter (bed_id IS NOT NULL, recency cutoff)
+    inside the ranking subquery promotes an earlier admit/transfer row to
+    "latest event" and marks discharged patients' beds occupied forever.
+    """
+
+    def sql(self, table_name="workspace.careflow360_silver.adt",
+            cutoff="2026-11-01T07:00:00Z"):
+        scope = nodes_from_source(GENERATOR_PATH, {"open_beds_sql"})
+        return scope["open_beds_sql"](table_name, cutoff)
+
+    def test_ranks_all_events_before_filtering_occupied_beds(self):
+        sql = self.sql()
+        inner = sql[sql.index("FROM workspace") : sql.index(") WHERE")]
+        # The ranking subquery sees every ADT row, including NULL-bed
+        # discharge rows and old events:
+        self.assertNotIn("bed_id IS NOT NULL", inner)
+        self.assertNotIn("event_ts >=", inner)
+        self.assertNotIn("WHERE", inner)
+        # Occupied-bed filtering applies only to the ranked latest row:
+        outer = sql[sql.index(") WHERE"):]
+        self.assertIn("rn = 1", outer)
+        self.assertIn("event_type != 'A03_DISCHARGE'", outer)
+        self.assertIn("bed_id IS NOT NULL", outer)
+        self.assertIn("event_ts >=", outer)
+
+    def test_latest_event_semantics_over_fixture_events(self):
+        import sqlite3
+        older = "2026-11-02T01:00:00Z"   # inside the 48h window
+        recent = "2026-11-03T05:30:00Z"   # inside the 48h window
+        stale = "2026-10-20T00:00:00Z"    # outside the 48h window
+        events = [
+            # Still admitted: bed stays occupied.
+            ("P1", "E1", "ED-001", "A01_ADMIT", older),
+            # Discharged later: the NULL-bed discharge row must FREE ED-002
+            # even though the admit row still references a non-null bed.
+            ("P2", "E2", "ED-002", "A01_ADMIT", older),
+            ("P2", "E2", None, "A03_DISCHARGE", recent),
+            # Stale legacy encounter: ignored by the cutoff.
+            ("P3", "E3", "MED-005", "A01_ADMIT", stale),
+            # Transferred: only the latest bed is occupied; ED-003 was freed.
+            ("P4", "E4", "ED-003", "A01_ADMIT", older),
+            ("P4", "E4", "ICU-002", "A02_TRANSFER", recent),
+        ]
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            "CREATE TABLE adt (patient_id TEXT, encounter_id TEXT, bed_id TEXT,"
+            " event_type TEXT, event_ts TEXT)"
+        )
+        conn.executemany("INSERT INTO adt VALUES (?,?,?,?,?)", events)
+        sql = self.sql(table_name="adt").replace("TIMESTAMP '", "'")
+        rows = conn.execute(sql).fetchall()
+        self.assertEqual({row[0] for row in rows}, {"ED-001", "ICU-002"})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

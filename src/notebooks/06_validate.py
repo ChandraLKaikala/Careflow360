@@ -60,6 +60,41 @@ def table(schema_name, name):
     return f"{catalog}.{schema_name}.{name}"
 
 
+def verify_prediction_pair_grain(prediction_table_name):
+    """Prediction grain contract: one row per unique non-null encounter pair.
+
+    triage_predictions is append-only at (patient_id, encounter_id) grain.
+    Duplicate pairs or null keys fan out every downstream join
+    (triage_model_quality, triage_predictions_current) and would silently
+    defeat the composite-key insert-only merge in the ML notebook, so
+    surface them as hard validation failures here.
+    """
+    failures = []
+    duplicates = (
+        spark.table(prediction_table_name)
+        .groupBy("patient_id", "encounter_id")
+        .count()
+        .where(F.col("count") > 1)
+        .limit(1)
+        .count()
+    )
+    if duplicates:
+        failures.append(
+            "Batch predictions contain duplicate (patient_id, encounter_id) rows"
+        )
+    null_keys = (
+        spark.table(prediction_table_name)
+        .where(F.col("patient_id").isNull() | F.col("encounter_id").isNull())
+        .limit(1)
+        .count()
+    )
+    if null_keys:
+        failures.append(
+            "Batch predictions contain null patient_id or encounter_id keys"
+        )
+    return failures
+
+
 # Auto-detect the presentation views that the DAB creates.
 if layout == "auto":
     layout = "split" if spark.catalog.tableExists(table(gold_schema, "patient_360")) else "unified"
@@ -131,6 +166,11 @@ if spark.catalog.tableExists(prediction):
     ).count()
     if invalid:
         errors.append(f"Invalid batch prediction labels: {invalid}")
+    pair_failures = verify_prediction_pair_grain(prediction)
+    if pair_failures:
+        errors.extend(pair_failures)
+    else:
+        print("Prediction grain: one row per unique non-null (patient_id, encounter_id)")
 
 if spark.catalog.tableExists(prediction) and spark.catalog.tableExists(patient):
     # Current-encounter prediction coverage: every (patient_id, encounter_id)
