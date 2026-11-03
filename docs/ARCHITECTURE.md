@@ -44,7 +44,7 @@ The project uses one Unity Catalog schema (`careflow360_dev`) and prefixes table
 
 ## Streaming model
 
-Kaggle files are historical. `01_generate_sample_data.py` and `02_kaggle_normalize.py` produce many small JSON files under Unity Catalog Volumes. Auto Loader treats them as an incrementally arriving source. This lets you demonstrate event-time processing, watermarks, deduplication, streaming tables and triggered/continuous Lakeflow behavior without requiring a paid Kafka/Event Hubs infrastructure.
+Synthetic generation only. `01_generate_sample_data.py` produces many small JSON files under Unity Catalog Volumes. Auto Loader treats them as an incrementally arriving source. This lets you demonstrate event-time processing, watermarks, deduplication, streaming tables and triggered/continuous Lakeflow behavior without requiring a paid Kafka/Event Hubs infrastructure.
 
 In a production hospital, the replay layer would be replaced by approved source integrations such as HL7/FHIR interfaces, device gateways, CDC feeds or cloud event buses.
 

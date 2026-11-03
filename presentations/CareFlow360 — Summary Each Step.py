@@ -20,7 +20,7 @@
 # MAGIC ### Key Learning: Infrastructure as Code
 # MAGIC - **Idempotent** — `CREATE SCHEMA IF NOT EXISTS` makes re-runnable
 # MAGIC - **UC volumes over DBFS** — Governed, access-controlled, auditable
-# MAGIC - **Single pipeline schema** — 17 tables in one schema, views in separate schemas for RBAC
+# MAGIC - **Single pipeline schema** — 15 pipeline datasets in one schema, views in separate schemas for RBAC
 
 # COMMAND ----------
 
@@ -29,7 +29,7 @@
 # MAGIC ## 📊 Step 1: Sample Data Generation
 # MAGIC
 # MAGIC ### What Was Built
-# MAGIC - 600 synthetic patients with deterministic data (fixed seed)
+# MAGIC - Initial seed run: 600 synthetic patients; scheduled runs now generate a random 50–150 patients per run
 # MAGIC - 4 event types: triage (600), vitals (2,065), ADT (1,385), chief complaints (600)
 # MAGIC
 # MAGIC ### Key Learning: Deterministic Synthetic Data
@@ -111,7 +111,7 @@
 # MAGIC ### What Was Built
 # MAGIC - RandomForest classifier (96 trees, patient-held-out evaluation (verify current MLflow metrics))
 # MAGIC - MLflow tracking + UC model registry with Champion alias
-# MAGIC - 600 batch-scored predictions
+# MAGIC - Batch-scored predictions for all current patients (1,000 as of Nov 3, 2026)
 # MAGIC
 # MAGIC ### Key Learning: Production ML on Databricks
 # MAGIC
@@ -260,11 +260,12 @@
 # MAGIC ### Current Project Status: ✅ FULLY OPERATIONAL
 # MAGIC
 # MAGIC - **SDP Pipeline**: IDLE, all recent updates COMPLETED, serverless + photon
-# MAGIC - **Daily Job**: Active schedule (2 AM UTC), all 4 tasks passing
-# MAGIC - **Dashboard**: Published with 10 verified widgets
+# MAGIC - **Daily Job**: Active schedule (2 AM UTC), all 6 tasks passing
+# MAGIC - **Dashboard**: 14 verified widgets
 # MAGIC - **Genie Space**: Production-ready, 8/8 benchmarks passed
 # MAGIC - **ML Model**: Trained, UC-registered with Champion alias, predictions written
 # MAGIC - **DAB**: Fully deployed with all resources created
+# MAGIC - **Updated Nov 3, 2026**: random 50–150 patients per run, 1,000 patients live, 16 presentation views, plus new Gold assets (triage_model_quality, chief_complaint_categories)
 # MAGIC
 # MAGIC ### New Notebook Added
-# MAGIC - **CareFlow360 — Complete Project Presentation** (ID: 255196183767644) — Comprehensive 12-section presentation covering architecture, pipeline, job, ML/AI, dashboard, Genie, DAB, governance, AI functions, fixes, health, lessons, and file inventory.
+# MAGIC - **CareFlow360 — Complete Project Presentation** (ID: 3441798886909984) — Comprehensive presentation covering architecture, pipeline, job, ML/AI, dashboard, Genie, DAB, governance, AI functions, fixes, health, lessons, and file inventory.

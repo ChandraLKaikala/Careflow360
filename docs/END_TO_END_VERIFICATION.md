@@ -55,7 +55,7 @@ WHERE p.latest_vital_ts IS NOT NULL
 
 ## Required live Databricks output test — existing resources only
 
-The existing workspace has a different four-task job from the new six-task source DAB.
+The existing workspace job was upgraded in place (2026-11-03) to the six-task graph; live task keys may differ from the DAB source keys (`generate_sample_events` vs `generate_daily_patients`, `refresh_lakehouse` vs `refresh_pipeline`, `train_triage_model` vs `train_ml_model`).
 Do **not** create another job or pipeline to test the upgrade. Backup the original settings,
 compare the bundle plan and bind resources only after reviewing differences.
 Follow [DATABRICKS_WORKSPACE_SYNC.md](DATABRICKS_WORKSPACE_SYNC.md).

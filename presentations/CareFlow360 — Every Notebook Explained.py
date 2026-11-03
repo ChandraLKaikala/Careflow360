@@ -4,7 +4,7 @@
 # MAGIC # 📒 CareFlow360 — Every Notebook Explained
 # MAGIC ## Detailed Guide to All Notebooks in the CareFlow360 Project
 # MAGIC
-# MAGIC **Last Updated**: October 10, 2026
+# MAGIC **Last Updated**: November 3, 2026
 # MAGIC **Status**: ✅ FULLY OPERATIONAL — All fixes applied, daily job passing
 # MAGIC
 # MAGIC ---
@@ -15,14 +15,16 @@
 # MAGIC
 # MAGIC | # | Notebook | Location | Purpose |
 # MAGIC | --- | --- | --- | --- |
-# MAGIC | 0 | `00_preflight` | `core/src/notebooks/` | UC schema + volume setup |
-# MAGIC | 1 | `01_generate_sample_data` | `core/src/notebooks/` | Synthetic patient data generator |
-# MAGIC | 2 | `03_create_views` | `core/src/notebooks/` | Presentation layer views (FIXED Oct 10) |
-# MAGIC | 3 | `04_train_triage_model` | `core/src/notebooks/` | ML training + MLflow + UC registration |
-# MAGIC | 4 | `05_create_policy_docs` | `core/src/notebooks/` | Policy document chunking for RAG |
-# MAGIC | 5 | `06_validate` | `core/src/notebooks/` | Runtime data validation |
-# MAGIC | 6 | `07_ai_functions` | `~/` | AI function demonstrations |
-# MAGIC | 7 | `00_setup` | `core/sql/` | Monitoring schema + quality rules setup |
+# MAGIC | 0 | `00_preflight` | `src/notebooks/` | UC schema + volume setup |
+# MAGIC | 1 | `01_generate_sample_data` | `src/notebooks/` | Synthetic patient data generator (random 50–150/run) |
+# MAGIC | 2 | `03_create_views` | `src/notebooks/` | Presentation layer views (16 views) |
+# MAGIC | 3 | `04_train_triage_model` | `src/notebooks/` | ML training + MLflow + UC registration |
+# MAGIC | 4 | `05_create_policy_docs` | `src/notebooks/` | Policy document chunking for RAG |
+# MAGIC | 5 | `06_validate` | `src/notebooks/` | Runtime data validation |
+# MAGIC | 6 | `07_ai_functions` | `src/notebooks/` | AI function demonstrations |
+# MAGIC | 7 | `00_setup` | `sql/` | Monitoring schema + quality rules setup |
+# MAGIC | 8 | `08_upgrade_existing_daily_job` | `src/notebooks/` | In-place live-job upgrade helper (applied Nov 3) |
+# MAGIC | 9 | `09_compare_free_edition_models` | `src/notebooks/` | Optional CPU model comparison |
 
 # COMMAND ----------
 
@@ -31,7 +33,7 @@
 # MAGIC ---
 # MAGIC ## Notebook 0: `00_preflight` — Pre-Flight Setup
 # MAGIC
-# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/00_preflight`
+# MAGIC **Location**: `src/notebooks/00_preflight.py`
 # MAGIC **Role**: Infrastructure setup — runs before everything else
 # MAGIC
 # MAGIC ### What It Does
@@ -58,9 +60,9 @@
 # MAGIC ---
 # MAGIC ## Notebook 1: `01_generate_sample_data` — Synthetic Patient Data Generator
 # MAGIC
-# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/01_generate_sample_data`
+# MAGIC **Location**: `src/notebooks/01_generate_sample_data.py`
 # MAGIC **Role**: Generates realistic hospital event data for the pipeline
-# MAGIC **Used by**: Job task `generate_daily_patients` (100 new patients/day)
+# MAGIC **Used by**: Job task `generate_sample_events` (live key `generate_daily_patients`) — random 50–150 patients per run
 # MAGIC
 # MAGIC ### What It Does
 # MAGIC 1. Generates synthetic patients with realistic clinical attributes (age, sex, arrival mode)
@@ -74,18 +76,18 @@
 # MAGIC
 # MAGIC ### Key Parameters (from job)
 # MAGIC - `catalog=workspace, schema=careflow360, volume=landing`
-# MAGIC - `num_patients=100, num_batches=2, reset_events=false`
+# MAGIC - `num_patients=random, num_batches=5, reset_events=false` (scheduled job)
 # MAGIC - `seconds_between_batches=0`
 # MAGIC
 # MAGIC ### Key Code Patterns
-# MAGIC - **Fixed random seed** for reproducibility
+# MAGIC - **Run-scoped identifiers** — scheduled runs generate a random 50–150 patients per run
 # MAGIC - **Realistic clinical distributions** (ESI weighted toward levels 3-4, vitals within normal ranges with some abnormalities)
 # MAGIC - **JSON output** for Auto Loader compatibility
 # MAGIC - **Append mode** (`reset_events=false`) for incremental data growth
 # MAGIC
 # MAGIC ### Data Volume
-# MAGIC - 600 initial patients → ~4,650 events (triage 600, vitals 2,065, ADT 1,385, complaints 600)
-# MAGIC - Growing 100 patients/day via the daily job
+# MAGIC - Initial seed run: 600 patients → ~4,650 events (triage 600, vitals 2,065, ADT 1,385, complaints 600)
+# MAGIC - Live baseline (Nov 3, 2026): 1,000 unique patients, growing ~100/day (random 50–150 per run)
 
 # COMMAND ----------
 
@@ -94,7 +96,7 @@
 # MAGIC ---
 # MAGIC ## Notebook 2: `03_create_views` — Presentation Layer Views
 # MAGIC
-# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/03_create_views`
+# MAGIC **Location**: `src/notebooks/03_create_views.py`
 # MAGIC **Role**: Creates views in bronze/silver/gold presentation schemas pointing to pipeline tables
 # MAGIC **Used by**: Job task `create_presentation_views`
 # MAGIC **Note**: This notebook was CREATED on Oct 10, 2026 — it previously existed only as a `.py` file, causing the job to fail with `RESOURCE_NOT_FOUND` for 7 consecutive days.
@@ -134,7 +136,7 @@
 # MAGIC ---
 # MAGIC ## Notebook 3: `04_train_triage_model` — Resource-Bounded, Patient-Grouped ML
 # MAGIC
-# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/04_train_triage_model`
+# MAGIC **Location**: `src/notebooks/04_train_triage_model.py`
 # MAGIC **Run type**: ML task of the daily workflow after Lakeflow and presentation views.
 # MAGIC
 # MAGIC ### Pipeline and Free Edition enhancements
@@ -160,7 +162,7 @@
 # MAGIC ---
 # MAGIC ## Notebook 4: `05_create_policy_docs` — Synthetic Policy Text
 # MAGIC
-# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/05_create_policy_docs`.
+# MAGIC **Location**: `src/notebooks/05_create_policy_docs.py`.
 # MAGIC Generates six fabricated hospital-operations policy chunks and enables Delta Change Data Feed for the optional AI Search extension.
 # MAGIC
 # MAGIC **Physical output**: `workspace.careflow360_gold.policy_chunks` in split-schema DAB deployments; `gold_policy_chunks` in the unified quickstart.
@@ -175,7 +177,7 @@
 # MAGIC ---
 # MAGIC ## Notebook 5: `06_validate` — Read-Only Runtime Acceptance Gates
 # MAGIC
-# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/src/notebooks/06_validate`.
+# MAGIC **Location**: `src/notebooks/06_validate.py`.
 # MAGIC Checks that required Bronze, Silver and Gold assets exist and have expected nonempty outputs; quarantine/alert tables may legitimately be empty.
 # MAGIC It checks triage acuities, one Patient 360 row per distinct patient, prediction label ranges and command-center KPI snapshot age.
 # MAGIC In the scheduled job, it also receives `expected_run_id` and `expected_new_patients`, then **fails** unless that run's new patient IDs appear in Bronze triage, Silver triage, Gold Patient 360 and predictions.
@@ -204,7 +206,7 @@
 # MAGIC ---
 # MAGIC ## Notebook 7: `00_setup` — Monitoring Schema & Quality Rules
 # MAGIC
-# MAGIC **Location**: `CareFlow360_Databricks_Free_Edition/core/sql/00_setup`
+# MAGIC **Location**: `sql/00_setup.sql`
 # MAGIC **Role**: Sets up monitoring infrastructure and seeds quality rules
 # MAGIC **Language**: SQL notebook
 # MAGIC
@@ -244,7 +246,7 @@
 # MAGIC
 # MAGIC ### 📋 Summary
 # MAGIC
-# MAGIC The CareFlow360 project contains **8 notebooks** (7 Python + 1 SQL) and **3 pipeline source files**, covering:
+# MAGIC The CareFlow360 project contains **10 notebooks** (9 Python + 1 SQL) and **3 pipeline source files**, covering:
 # MAGIC - Infrastructure setup (preflight, setup)
 # MAGIC - Data generation (sample data)
 # MAGIC - Pipeline processing (bronze, silver, gold source files)
@@ -254,4 +256,4 @@
 # MAGIC - Runtime validation (validate)
 # MAGIC - AI functions (classify, extract, forecast, query)
 # MAGIC
-# MAGIC **All notebooks are accessible and the daily job runs all 4 tasks end-to-end successfully as of October 10, 2026.**
+# MAGIC **All notebooks are accessible and the daily job runs all 6 tasks end-to-end (random 50–150 patients per run) successfully as of November 3, 2026.**

@@ -8,7 +8,7 @@
 # MAGIC **Owner**: YOUR_WORKSPACE_USER
 # MAGIC **Workspace**: dbc-11dcf304-ed66.cloud.databricks.com
 # MAGIC **Edition**: Databricks Free Edition
-# MAGIC **Last Updated**: October 10, 2026
+# MAGIC **Last Updated**: November 3, 2026
 # MAGIC **Status**: ✅ FULLY OPERATIONAL — All tasks passing, daily schedule active
 # MAGIC
 # MAGIC ---
@@ -44,10 +44,10 @@
 # MAGIC
 # MAGIC | Capability | Status | Details |
 # MAGIC | --- | --- | --- |
-# MAGIC | **SDP Pipeline** | ✅ Operational | 17 tables (4 Bronze, 6 Silver, 7 Gold), serverless + photon |
-# MAGIC | **Daily Job** | ✅ Operational | 4-task workflow: generate data → refresh pipeline → create views → train ML |
+# MAGIC | **SDP Pipeline** | ✅ Operational | 15 datasets (4 Bronze, 6 Silver, 5 Gold), serverless + photon |
+# MAGIC | **Daily Job** | ✅ Operational | 6-task workflow: generate events → refresh pipeline → create views → policy docs → train ML → validate |
 # MAGIC | **ML Model** | ✅ Trained | RandomForest triage classifier, measured patient-held-out metrics (inspect MLflow), UC-registered with Champion alias |
-# MAGIC | **AI/BI Dashboard** | ✅ Published | 10 verified widgets across 6 SQL datasets |
+# MAGIC | **AI/BI Dashboard** | ✅ Published | 14 verified widgets across 6 SQL datasets |
 # MAGIC | **Genie Space** | ✅ Production-ready | 8/8 benchmark questions passed |
 # MAGIC | **UC Governance** | ✅ Applied | Tags, comments, Delta properties, 3-schema separation |
 # MAGIC | **DAB** | ✅ Deployed | Declarative Automation Bundles with multi-resource YAML |
@@ -87,7 +87,7 @@
 # MAGIC │                                                                  │
 # MAGIC │  ┌──────────────────────────────────────────────────────────┐   │
 # MAGIC │  │            Daily Incremental Job (2 AM UTC)              │   │
-# MAGIC │  │  generate_data → refresh_pipeline → create_views → ML    │   │
+# MAGIC │  │  generate → refresh → views → docs → ML → validate      │   │
 # MAGIC │  └──────────────────────────────────────────────────────────┘   │
 # MAGIC └─────────────────────────────────────────────────────────────────┘
 # MAGIC ```
@@ -120,7 +120,7 @@
 # MAGIC
 # MAGIC | Schema | Purpose | Contains | Access Level |
 # MAGIC | --- | --- | --- | --- |
-# MAGIC | `workspace.careflow360` | SDP pipeline working schema | 17 physical tables (streaming tables + materialized views + physical tables) | Data engineering only |
+# MAGIC | `workspace.careflow360` | SDP pipeline working schema | 15 pipeline datasets (streaming tables + materialized views) plus physical Gold tables | Data engineering only |
 # MAGIC | `workspace.careflow360_bronze` | Bronze presentation | 4 views → `careflow360.bronze_*` | Restricted to DE team |
 # MAGIC | `workspace.careflow360_silver` | Silver presentation | 6 views → `careflow360.silver_*` | Analysts + ML engineers |
 # MAGIC | `workspace.careflow360_gold` | Gold presentation | 5 views + 2 physical tables | All consumers |
@@ -263,46 +263,57 @@
 # MAGIC │                     │     │                   │     │                       │     │                  │
 # MAGIC │ Notebook: 01_gen... │     │ Pipeline: SDP     │     │ Notebook: 03_create... │     │ Notebook: 04_tr..│
 # MAGIC │ Timeout: 1800s      │     │ Full refresh: No  │     │ Timeout: 600s          │     │ Timeout: 1200s   │
-# MAGIC │ 100 new patients    │     │ Bronze→Silver→Gold│     │ Bronze/Silver/Gold    │     │ RandomForest,    │
+# MAGIC │ random 50-150/day  │     │ Bronze→Silver→Gold│     │ Bronze/Silver/Gold    │     │ RandomForest,    │
 # MAGIC │ append mode         │     │ incremental       │     │ presentation views    │     │ MLflow, UC reg   │
 # MAGIC └─────────────────────┘     └──────────────────┘     └───────────────────────┘     └──────────────────┘
 # MAGIC ```
 # MAGIC
 # MAGIC ### Task Details
 # MAGIC
-# MAGIC #### Task 1: generate_daily_patients
+# MAGIC #### Task 1: generate_sample_events (live key: generate_daily_patients)
 # MAGIC - **Notebook**: `01_generate_sample_data`
-# MAGIC - **Parameters**: `catalog=workspace, schema=careflow360, volume=landing, num_patients=100, reset_events=false`
-# MAGIC - **Purpose**: Generates 100 new synthetic patients per day and writes JSON to the landing volume
+# MAGIC - **Parameters**: `catalog=workspace, schema=careflow360, volume=landing, num_patients=random, num_batches=5, reset_events=false`
+# MAGIC - **Purpose**: Generates a random 50–150 new synthetic patients per run and writes JSON to the landing volume; the actual count is published through the run manifest and job task values
 # MAGIC - **Timeout**: 30 minutes
-# MAGIC - **Growth projection**: Day 0: ~700 → Day 30: ~3,700 → Day 90: ~9,700 patients
+# MAGIC - **Live baseline (Nov 3, 2026)**: 1,000 unique patients; growth now averages ~100 patients/day (random 50–150 per run)
 # MAGIC
-# MAGIC #### Task 2: refresh_pipeline
+# MAGIC #### Task 2: refresh_lakehouse (live key: refresh_pipeline)
 # MAGIC - **Pipeline**: `CareFlow360_DAB_Pipeline` (incremental refresh, not full)
 # MAGIC - **Purpose**: Triggers the SDP pipeline to process new data through Bronze → Silver → Gold
-# MAGIC - **Depends on**: generate_daily_patients (must succeed first)
+# MAGIC - **Depends on**: generate_sample_events (must succeed first)
 # MAGIC
 # MAGIC #### Task 3: create_presentation_views
 # MAGIC - **Notebook**: `03_create_views` (created Oct 10 — see Fixes section)
 # MAGIC - **Parameters**: `catalog=workspace, pipeline_schema=careflow360, bronze/silver/gold_schema=careflow360_*`
-# MAGIC - **Purpose**: Creates/updates views in the 3 presentation schemas pointing to pipeline tables
+# MAGIC - **Purpose**: Creates/updates the 16 views in the 3 presentation schemas pointing to pipeline tables, and maintains the AI-classified chief_complaint_categories Gold table
 # MAGIC - **Timeout**: 10 minutes
 # MAGIC
-# MAGIC #### Task 4: train_ml_model
+# MAGIC #### Task 4: create_policy_docs
+# MAGIC - **Notebook**: `05_create_policy_docs`
+# MAGIC - **Purpose**: Creates/refreshes the six synthetic policy chunks (idempotent)
+# MAGIC
+# MAGIC #### Task 5: train_triage_model (live key: train_ml_model)
 # MAGIC - **Notebook**: `04_train_triage_model`
 # MAGIC - **Parameters**: `catalog=workspace, schema=careflow360` (fixed Oct 10 — see Fixes section)
 # MAGIC - **Purpose**: Retrains the RandomForest triage classifier on the growing dataset, logs to MLflow, registers in UC, writes batch predictions
 # MAGIC - **Timeout**: 20 minutes
 # MAGIC
-# MAGIC ### Last Successful Run (Oct 10, 2026)
+# MAGIC #### Task 6: validate_project
+# MAGIC - **Notebook**: `06_validate`
+# MAGIC - **Purpose**: Read-only acceptance gates; in the scheduled run it requires the run's actual new-patient count (from the manifest) to appear across Bronze, Silver, Gold Patient 360 and predictions
 # MAGIC
-# MAGIC | Task | Duration | Status |
-# MAGIC | --- | --- | --- |
-# MAGIC | generate_daily_patients | 39s | ✅ SUCCESS |
-# MAGIC | refresh_pipeline | 383s (6.4 min) | ✅ SUCCESS |
-# MAGIC | create_presentation_views | 29s | ✅ SUCCESS |
-# MAGIC | train_ml_model | ~46s | ✅ SUCCESS |
-# MAGIC | **Total** | **~9 min** | **✅ SUCCESS** |
+# MAGIC ### Verified Run Status (Nov 3, 2026 — six-task job)
+# MAGIC
+# MAGIC | Task | Status |
+# MAGIC | --- | --- |
+# MAGIC | generate_daily_patients (live key) | ✅ SUCCESS — random 50–150 patients per run |
+# MAGIC | refresh_pipeline (live key) | ✅ SUCCESS — incremental Bronze → Silver → Gold |
+# MAGIC | create_presentation_views | ✅ SUCCESS — 16 presentation views |
+# MAGIC | create_policy_docs | ✅ SUCCESS — 6 policy chunks |
+# MAGIC | train_ml_model (live key) | ✅ SUCCESS — predictions written |
+# MAGIC | validate_project | ✅ SUCCESS — all acceptance gates pass |
+# MAGIC
+# MAGIC Live baseline (Nov 3, 2026): 1,000 unique patients and 1,000 current predictions.
 
 # COMMAND ----------
 
@@ -318,7 +329,7 @@
 # MAGIC | **Features** | 12 numeric (age, vitals, shock_index, etc.) + 3 categorical (arrival_mode, day, sex) |
 # MAGIC | **Target** | `triage_acuity` (ESI 1-5, 5-class classification) |
 # MAGIC | **Accuracy** | Determined from current patient-held-out MLflow run; do not assume a historical score |
-# MAGIC | **Training data** | `workspace.careflow360.gold_triage_training` (~700 rows, growing daily) |
+# MAGIC | **Training data** | `workspace.careflow360.gold_triage_training` (growing daily; live baseline 1,000 patients as of Nov 3, 2026) |
 # MAGIC | **Model registry** | UC-registered as `workspace.careflow360.triage_acuity_model` with `Champion` alias |
 # MAGIC | **Predictions** | Written to `workspace.careflow360.gold_triage_predictions` (batch scoring) |
 # MAGIC | **MLflow experiment** | `/Workspace/Users/YOUR_WORKSPACE_USER/careflow360/triage_experiment` |
@@ -337,7 +348,7 @@
 # MAGIC
 # MAGIC # Model
 # MAGIC RandomForestClassifier(
-# MAGIC     n_estimators=160, max_depth=12,
+# MAGIC     n_estimators=96, max_depth=12,
 # MAGIC     min_samples_leaf=2, class_weight='balanced_subsample'
 # MAGIC )
 # MAGIC ```
@@ -364,7 +375,7 @@
 # MAGIC | **ID** | `01f1beeb451e10439c0b4bf6aa8eeb70` |
 # MAGIC | **Type** | Lakeview Dashboard |
 # MAGIC | **Datasets** | 6 SQL datasets referencing `careflow360_gold.*` views |
-# MAGIC | **Widgets** | 10 verified widgets |
+# MAGIC | **Widgets** | 14 verified widgets |
 # MAGIC
 # MAGIC ### Dashboard Widgets
 # MAGIC
@@ -423,37 +434,36 @@
 # MAGIC ### DAB Project Structure
 # MAGIC
 # MAGIC ```
-# MAGIC CareFlow360_Databricks_Free_Edition/
-# MAGIC   core/
-# MAGIC     databricks.yml          -- Root bundle config (schema=careflow360)
-# MAGIC     resources/
-# MAGIC       01_uc.yml             -- 4 UC schemas (pipeline + 3 presentation)
-# MAGIC       02_pipeline.yml        -- SDP pipeline definition
-# MAGIC       03_jobs.yml            -- Daily incremental job with 4 tasks
-# MAGIC     src/
-# MAGIC       notebooks/             -- 7 Databricks notebooks
-# MAGIC         00_preflight.py
-# MAGIC         01_generate_sample_data.py
-# MAGIC         03_create_views.py        <-- Created as notebook Oct 10
-# MAGIC         04_train_triage_model.py
-# MAGIC         05_create_policy_docs.py
-# MAGIC         06_validate.py
-# MAGIC       pipelines/             -- 3 SDP source files
-# MAGIC         01_bronze.py
-# MAGIC         02_silver.py
-# MAGIC         03_gold.py
-# MAGIC     sql/                     -- SQL notebooks (setup, validation, benchmarks)
-# MAGIC   extensions/                -- Optional capabilities
-# MAGIC     lakebase/                -- Lakebase Postgres config
-# MAGIC     genie/                   -- Genie space config
-# MAGIC     model_serving/           -- Model serving endpoint config
-# MAGIC     ai_search/               -- Vector search / RAG config
-# MAGIC     app/                     -- Databricks App config
-# MAGIC   docs/                     -- Documentation (8 files)
-# MAGIC   tests/                    -- Static validation
+# MAGIC Careflow360/                     -- GitHub repository root (canonical)
+# MAGIC   databricks.yml                 -- Root bundle config (schema=careflow360)
+# MAGIC   resources/
+# MAGIC     01_uc.yml                    -- 4 UC schemas (pipeline + 3 presentation)
+# MAGIC     02_pipeline.yml              -- SDP pipeline definition
+# MAGIC     03_jobs.yml                  -- Daily incremental job with 6 tasks
+# MAGIC   src/
+# MAGIC     notebooks/                   -- 9 Databricks notebooks
+# MAGIC       00_preflight.py
+# MAGIC       01_generate_sample_data.py
+# MAGIC       03_create_views.py
+# MAGIC       04_train_triage_model.py
+# MAGIC       05_create_policy_docs.py
+# MAGIC       06_validate.py
+# MAGIC       07_ai_functions.py
+# MAGIC       08_upgrade_existing_daily_job.py
+# MAGIC       09_compare_free_edition_models.py
+# MAGIC     pipelines/                   -- 3 SDP source files
+# MAGIC       01_bronze.py
+# MAGIC       02_silver.py
+# MAGIC       03_gold.py
+# MAGIC   sql/                           -- SQL (setup, validation, benchmarks)
+# MAGIC   extensions/app/                -- Streamlit command-center Databricks App
+# MAGIC   docs/                          -- Documentation (11 files)
+# MAGIC   tests/                         -- Offline contract tests + static_validate.py
+# MAGIC   presentations/                 -- Presentation notebooks
 # MAGIC   README.md
 # MAGIC   QUICKSTART.md
-# MAGIC   BUILD_INFO.txt
+# MAGIC   CHANGELOG.md
+# MAGIC   LICENSE
 # MAGIC ```
 # MAGIC
 # MAGIC ### DAB Resources Deployed
@@ -529,15 +539,15 @@
 # MAGIC
 # MAGIC ## 12. Extensions & Future Capabilities {#extensions}
 # MAGIC
-# MAGIC The DAB project includes extension configurations for advanced capabilities (not yet deployed in Free Edition):
+# MAGIC The repository previously carried template stubs for Model Serving, AI Search, Lakebase and Genie bundles. Those are **removed** — they are not usable on Databricks Free Edition and were never deployed. What actually exists:
 # MAGIC
-# MAGIC | Extension | Purpose | Config Location |
+# MAGIC | Capability | Purpose | Location / Status |
 # MAGIC | --- | --- | --- |
-# MAGIC | **Model Serving** | Triage model endpoint with scale-to-zero | `extensions/model_serving/` |
-# MAGIC | **AI Search / RAG** | Vector search index for policy documents | `extensions/ai_search/` |
-# MAGIC | **Lakebase Postgres** | Operational state database | `extensions/lakebase/` |
-# MAGIC | **Databricks App** | Interactive healthcare dashboard app | `extensions/app/` |
-# MAGIC | **Genie Space** | Configured and deployed | `extensions/genie/` |
+# MAGIC | **Databricks App** | Streamlit healthcare command center | `extensions/app/` — ready to deploy |
+# MAGIC | **Genie Space** | Hospital operations agent | Live in workspace (no bundle config) |
+# MAGIC | **Model Serving** | Removed — not available on Free Edition | — |
+# MAGIC | **AI Search / RAG** | Removed — not available on Free Edition | — |
+# MAGIC | **Lakebase Postgres** | Removed — not available on Free Edition | — |
 
 # COMMAND ----------
 
@@ -600,14 +610,14 @@
 # MAGIC | Component | Status | Key Metrics |
 # MAGIC | --- | --- | --- |
 # MAGIC | **SDP Pipeline** | ✅ Healthy | IDLE, last 5 updates COMPLETED, serverless + photon |
-# MAGIC | **Daily Job** | ✅ Operational | All 4 tasks SUCCESS, schedule active (2 AM UTC) |
+# MAGIC | **Daily Job** | ✅ Operational | All 6 tasks SUCCESS, schedule active (2 AM UTC) |
 # MAGIC | **Bronze Tables** | ✅ 4 tables | Auto Loader streaming, schema-enforced, DQ-gated |
 # MAGIC | **Silver Tables** | ✅ 6 tables | Cleansed, enriched, SCD2, quarantine pattern |
-# MAGIC | **Gold Tables** | ✅ 7 tables | 5 materialized views + 2 physical (predictions + policy chunks) |
-# MAGIC | **Presentation Views** | ✅ 15 views | 4 bronze + 6 silver + 5 gold views across 3 schemas |
+# MAGIC | **Gold Tables** | ✅ 9 tables | 6 presentation views + 3 physical (predictions, policy chunks, chief-complaint categories) |
+# MAGIC | **Presentation Views** | ✅ 16 views | 4 bronze + 6 silver + 6 gold (incl. triage_model_quality) across 3 schemas |
 # MAGIC | **ML Model** | ✅ Trained | RandomForest, measured patient-held-out metrics (inspect MLflow), UC Champion alias |
 # MAGIC | **MLflow Experiment** | ✅ Created | `/Workspace/Users/.../careflow360/triage_experiment` |
-# MAGIC | **AI/BI Dashboard** | ✅ Published | 10 widgets, 6 datasets, all verified |
+# MAGIC | **AI/BI Dashboard** | ✅ Published | 14 widgets, 6 datasets, all verified |
 # MAGIC | **Genie Space** | ✅ Production-ready | 8/8 benchmarks passed |
 # MAGIC | **UC Governance** | ✅ Applied | Tags, comments, Delta properties, 3-schema separation |
 # MAGIC | **DAB** | ✅ Deployed | Multi-resource YAML, all resources created |
@@ -646,7 +656,7 @@
 # MAGIC
 # MAGIC 2. **Serverless + Photon**: The pipeline runs efficiently on serverless compute with photon acceleration — no cluster management needed, auto-scaling, and fast startup.
 # MAGIC
-# MAGIC 3. **DAB for Reproducibility**: Using Declarative Automation Bundles makes the entire project reproducible — schemas, pipeline, job, and extensions are all defined as code.
+# MAGIC 3. **DAB for Reproducibility**: Using Declarative Automation Bundles makes the entire project reproducible — schemas, pipeline, job, SQL, tests, and the app are all defined as code.
 # MAGIC
 # MAGIC 4. **Metadata-Driven Quality**: Clinical reference ranges and quality rules stored as configuration (not hardcoded) make the system maintainable and adaptable to different clinical contexts.
 # MAGIC
@@ -658,46 +668,47 @@
 # MAGIC %md
 # MAGIC ## 16. File Inventory {#file-inventory}
 # MAGIC
-# MAGIC ### Core Notebooks (7)
+# MAGIC ### Core Notebooks (9)
 # MAGIC
 # MAGIC | Notebook | Path | Purpose |
 # MAGIC | --- | --- | --- |
-# MAGIC | `00_preflight` | `core/src/notebooks/00_preflight` | UC schema + volume setup, pre-flight checks |
-# MAGIC | `01_generate_sample_data` | `core/src/notebooks/01_generate_sample_data` | Synthetic patient data generator (600+ patients) |
-# MAGIC | `03_create_views` | `core/src/notebooks/03_create_views` | Presentation layer views (bronze/silver/gold schemas) |
-# MAGIC | `04_train_triage_model` | `core/src/notebooks/04_train_triage_model` | RandomForest triage classifier + MLflow + UC registration |
-# MAGIC | `05_create_policy_docs` | `core/src/notebooks/05_create_policy_docs` | Policy document chunking for RAG |
-# MAGIC | `06_validate` | `core/src/notebooks/06_validate` | Runtime validation (row counts, schema, clinical ranges) |
-# MAGIC | `07_ai_functions` | `07_ai_functions` | AI function demos (ai_classify, ai_extract, ai_forecast, ai_query) |
+# MAGIC | `00_preflight` | `src/notebooks/00_preflight.py` | UC schema + volume setup, pre-flight checks |
+# MAGIC | `01_generate_sample_data` | `src/notebooks/01_generate_sample_data.py` | Synthetic patient data generator (random 50–150/run) |
+# MAGIC | `03_create_views` | `src/notebooks/03_create_views.py` | 16 presentation views + AI gold assets |
+# MAGIC | `04_train_triage_model` | `src/notebooks/04_train_triage_model.py` | RandomForest triage classifier + MLflow + UC registration |
+# MAGIC | `05_create_policy_docs` | `src/notebooks/05_create_policy_docs.py` | Policy document chunking for RAG |
+# MAGIC | `06_validate` | `src/notebooks/06_validate.py` | Runtime validation (row counts, schema, clinical ranges) |
+# MAGIC | `07_ai_functions` | `src/notebooks/07_ai_functions.py` | AI function demos (ai_classify, ai_extract, ai_forecast, ai_query) |
+# MAGIC | `08_upgrade_existing_daily_job` | `src/notebooks/08_upgrade_existing_daily_job.py` | In-place live-job upgrade helper (applied Nov 3) |
+# MAGIC | `09_compare_free_edition_models` | `src/notebooks/09_compare_free_edition_models.py` | Optional CPU model comparison benchmark |
 # MAGIC
 # MAGIC ### Pipeline Source Files (3)
 # MAGIC
 # MAGIC | File | Path | Layer | Tables |
 # MAGIC | --- | --- | --- | --- |
-# MAGIC | `01_bronze.py` | `core/src/pipelines/01_bronze.py` | Bronze | 4 streaming tables (Auto Loader) |
-# MAGIC | `02_silver.py` | `core/src/pipelines/02_silver.py` | Silver | 6 tables (cleanse + enrich + SCD2) |
-# MAGIC | `03_gold.py` | `core/src/pipelines/03_gold.py` | Gold | 5 materialized views + 2 physical tables |
+# MAGIC | `01_bronze.py` | `src/pipelines/01_bronze.py` | Bronze | 4 streaming tables (Auto Loader) |
+# MAGIC | `02_silver.py` | `src/pipelines/02_silver.py` | Silver | 6 tables (cleanse + enrich + SCD2) |
+# MAGIC | `03_gold.py` | `src/pipelines/03_gold.py` | Gold | 5 materialized views + 2 physical tables |
 # MAGIC
 # MAGIC ### SQL Notebooks (4)
 # MAGIC
 # MAGIC | Notebook | Path | Purpose |
 # MAGIC | --- | --- | --- |
-# MAGIC | `00_setup` | `core/sql/00_setup` | Monitoring/quality schema setup, quality rules seeding |
-# MAGIC | `dashboard_queries` | `core/sql/dashboard_queries` | SQL queries for dashboard datasets |
-# MAGIC | `genie_benchmarks` | `core/sql/genie_benchmarks` | Genie space benchmark queries |
-# MAGIC | `validation` | `core/sql/validation` | Data validation SQL queries |
+# MAGIC | `00_setup` | `sql/00_setup.sql` | Monitoring/quality schema setup, quality rules seeding |
+# MAGIC | `dashboard_queries` | `sql/dashboard_queries.sql` | SQL queries for dashboard datasets |
+# MAGIC | `genie_benchmarks` | `sql/genie_benchmarks.sql` | Genie space benchmark queries |
+# MAGIC | `validation` | `sql/validation.sql` | Data validation SQL queries |
 # MAGIC
-# MAGIC ### DAB Configuration (5)
+# MAGIC ### DAB Configuration (4)
 # MAGIC
 # MAGIC | File | Path | Purpose |
 # MAGIC | --- | --- | --- |
-# MAGIC | `databricks.yml` | `core/databricks.yml` | Root bundle configuration |
-# MAGIC | `01_uc.yml` | `core/resources/01_uc.yml` | 4 UC schemas (pipeline + 3 presentation) |
-# MAGIC | `02_pipeline.yml` | `core/resources/02_pipeline.yml` | SDP pipeline definition |
-# MAGIC | `03_jobs.yml` | `core/resources/03_jobs.yml` | Daily incremental job (4 tasks) |
-# MAGIC | `databricks.yml` | `extensions/databricks.yml` | Extensions root config |
+# MAGIC | `databricks.yml` | `databricks.yml` | Root bundle configuration |
+# MAGIC | `01_uc.yml` | `resources/01_uc.yml` | 4 UC schemas (pipeline + 3 presentation) |
+# MAGIC | `02_pipeline.yml` | `resources/02_pipeline.yml` | SDP pipeline definition |
+# MAGIC | `03_jobs.yml` | `resources/03_jobs.yml` | Daily incremental job (6 tasks) |
 # MAGIC
-# MAGIC ### Documentation (8+)
+# MAGIC ### Documentation (11)
 # MAGIC
 # MAGIC | File | Purpose |
 # MAGIC | --- | --- |
@@ -705,18 +716,22 @@
 # MAGIC | `FREE_EDITION_SCOPE.md` | Free Edition feature scope |
 # MAGIC | `TROUBLESHOOTING.md` | Common issues and solutions |
 # MAGIC | `DASHBOARD_GENIE.md` | Dashboard and Genie setup guide |
-# MAGIC | `AI_SEARCH_RAG.md` | Vector search / RAG guide |
-# MAGIC | `MODEL_SERVING.md` | Model serving endpoint guide |
-# MAGIC | `LAKEBASE.md` | Lakebase Postgres guide |
+# MAGIC | `DATABRICKS_WORKSPACE_SYNC.md` | Git ↔ workspace sync runbook |
+# MAGIC | `END_TO_END_VERIFICATION.md` | Live acceptance checks |
+# MAGIC | `FREE_EDITION_NOTEBOOK_AUDIT.md` | Source-by-source notebook audit |
+# MAGIC | `EVERY_NOTEBOOK_EXPLAINED.md` | Notebook-by-notebook guide |
+# MAGIC | `KAGGLE_DATA.md` | Historical Kaggle integration note |
 # MAGIC | `INTERVIEW_TALK_TRACK.md` | Interview presentation guide |
+# MAGIC | `SUMMARY_EACH_STEP.md` | Step-by-step learning summary |
 # MAGIC
-# MAGIC ### Summary Notebooks (3)
+# MAGIC ### Summary Notebooks (4)
 # MAGIC
 # MAGIC | Notebook | ID | Purpose |
 # MAGIC | --- | --- | --- |
-# MAGIC | `CareFlow360 — Complete Project Presentation` | 255196183767644 | This notebook — comprehensive project overview |
-# MAGIC | `CareFlow360 — Summary Each Step` | 1018675845605347 | Step-by-step learning guide (Steps 0-7 + cross-cutting) |
-# MAGIC | `CareFlow360 — Every Notebook Explained` | 1018675845605346 | Detailed explanation of each notebook's purpose and code |
+# MAGIC | `CareFlow360 — Complete Project Presentation` | 3441798886909984 | This notebook — comprehensive project overview |
+# MAGIC | `CareFlow360 — Summary Each Step` | 3441798886909987 | Step-by-step learning guide (Steps 0-7 + cross-cutting) |
+# MAGIC | `CareFlow360 — Every Notebook Explained` | 3441798886909986 | Detailed explanation of each notebook's purpose and code |
+# MAGIC | `CareFlow360 — Presentation Talk Track` | 3441798886909985 | Spoken presentation script with cell references |
 # MAGIC
 # MAGIC ---
 # MAGIC
@@ -726,13 +741,13 @@
 # MAGIC - **Medallion architecture** with 3-schema separation for governance
 # MAGIC - **Serverless SDP pipeline** with Auto Loader, DQ gates, and SCD Type 2
 # MAGIC - **Daily incremental job** for continuous data growth and ML retraining
-# MAGIC - **AI/BI dashboard** with 10 verified widgets
+# MAGIC - **AI/BI dashboard** with 14 verified widgets
 # MAGIC - **Genie space** with 8/8 benchmark questions passing
 # MAGIC - **ML model** with MLflow tracking and UC model registry
 # MAGIC - **DAB deployment** for full reproducibility
 # MAGIC - **AI functions** for classification, extraction, and querying
 # MAGIC
-# MAGIC **The platform is fully operational as of October 10, 2026, with a daily schedule that runs all 4 tasks end-to-end without intervention.**
+# MAGIC **The platform is fully operational as of November 3, 2026, with a daily schedule that runs all 6 tasks end-to-end (random 50–150 patients per run) without intervention.**
 
 # COMMAND ----------
 

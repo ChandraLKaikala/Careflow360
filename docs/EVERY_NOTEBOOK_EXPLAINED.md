@@ -72,13 +72,13 @@ Creates business-ready materialized views for dashboards, Genie, ML training, an
 Creates UC schema `workspace.careflow360`, volume `landing`, and landing directories for each event type. Idempotent with `IF NOT EXISTS`.
 
 ## 01 · Generate Sample Data
-Generates run-scoped synthetic patient identifiers and append-only ADT, triage, vitals and complaint JSON events for Auto Loader. The scheduled source job config requests 100 new patients per execution, not a repeated static cohort. Each run has an independent manifest.
+Generates run-scoped synthetic patient identifiers and append-only ADT, triage, vitals and complaint JSON events for Auto Loader. The scheduled source job config requests a random 50–150 new patients per execution (`num_patients=random`), not a repeated static cohort; the actual count is published through the run manifest and job task values. Each run has an independent manifest.
 
-## 02 · Kaggle Normalize
-Normalizes external data to JSON schema expected by Bronze. Column mapping, type casting, null handling.
+## 02 · Kaggle Normalize (removed)
+Kaggle integration was removed from the project; the pipeline runs fully on synthetic data from `01_generate_sample_data`. This section is kept only to preserve historical numbering.
 
 ## 03 · Create Views
-Creates 15 presentation views (4 bronze, 6 silver, 5 gold) pointing to pipeline tables. Strips layer prefix for clean names. Runs as job task after pipeline refresh.
+Creates 16 presentation views (4 bronze, 6 silver, 6 gold — including `triage_model_quality`) pointing to pipeline tables, and maintains the AI-classified `chief_complaint_categories` Gold table. Strips layer prefix for clean names. Runs as job task after pipeline refresh.
 
 ## 04 · Train Triage ML Model
 RandomForest (96 trees, depth 12, up to 2 CPU workers). A deterministic historical-encounter sample is capped at 4,000 rows by default for Free Edition. Evaluation holds out complete patient IDs using GroupShuffleSplit and logs majority-class baselines, accuracy, balanced accuracy and macro-F1. MLflow registers a Unity Catalog model with Champion alias. Insert-only Delta MERGE adds predictions for previously unseen current patient IDs. No fixed accuracy is promised; inspect actual MLflow metrics.
@@ -99,7 +99,7 @@ The executable notebook uses Free Edition-friendly SQL for KPI aggregates, compl
 
 ## Verification scope
 
-- Source pipeline declares **15 materialized/streaming datasets**. The split-schema layout exposes **15 presentation views** and two additional physical Gold tables.
-- As checked on November 1, 2026, the live workspace contained **600 unique current patient IDs**, **2,800 historical triage encounters**, **5,609 ADT events** and **600 current predictions**. These are historical observations, not perpetual row-count constants.
-- The published dashboard had **3 pages, 29 widgets and 18 SQL datasets**. SQL queries were tested independently; visual rendering was not independently certified.
+- Source pipeline declares **15 materialized/streaming datasets**. The split-schema layout exposes **16 presentation views** and three additional physical Gold tables (predictions, policy chunks, chief-complaint categories).
+- As checked on November 3, 2026, the live workspace contained **1,000 unique current patient IDs** and **1,000 current predictions**. (Earlier observation, November 1: 600 patients, 2,800 triage encounters, 5,609 ADT events.) These are historical observations, not perpetual row-count constants.
+- The dashboard has **1 page, 14 widgets and 6 SQL datasets** (verified in the current draft; republish after edits). SQL queries were tested independently; visual rendering was not independently certified.
 - Patient growth and the MLflow model's holdout accuracy must be verified **after** the corrected code has actually been deployed to Databricks. GitHub CI passing is not that deployment.

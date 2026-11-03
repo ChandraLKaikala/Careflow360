@@ -40,4 +40,4 @@ except Exception as exc:
 
 # MAGIC %md
 # MAGIC ## Next
-# MAGIC For the existing split-schema scheduled job, **pull the latest GitHub main and run 08_upgrade_existing_daily_job.py in dry-run mode** before changing any resources. The separate `core/sql/00_setup.sql` is for the unified quickstart only; do not create its `careflow360_dev` schema as a substitute for the already deployed pipeline.
+# MAGIC For the existing split-schema scheduled job, **pull the latest GitHub main and run 08_upgrade_existing_daily_job.py in dry-run mode** before changing any resources. The separate `sql/00_setup.sql` is for the unified quickstart only; do not create its `careflow360_dev` schema as a substitute for the already deployed pipeline.

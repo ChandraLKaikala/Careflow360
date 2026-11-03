@@ -16,7 +16,7 @@
 # MAGIC
 # MAGIC **[CareFlow360 — Complete Project Presentation, Cell 2]**
 # MAGIC
-# MAGIC "Let me start with a quick summary of what's been achieved. The platform has an SDP pipeline with 17 tables across Bronze, Silver, and Gold layers, running on serverless compute with Photon acceleration. There's a scheduled 2 AM UTC daily job that generates synthetic patients, refreshes Lakeflow, creates presentation views and trains ML, subject to observed missed dates and Free Edition quotas. The ML model is a RandomForest classifier achieving about patient-held-out evaluation (verify current MLflow metrics) on triage acuity prediction, registered in Unity Catalog with a Champion alias. The AI/BI dashboard has 29 widgets across 3 pages with SQL datasets independently verified, and the Genie space passed all 8 benchmark questions."
+# MAGIC "Let me start with a quick summary of what's been achieved. The platform has an SDP pipeline with 15 datasets across Bronze, Silver, and Gold layers, running on serverless compute with Photon acceleration. There's a scheduled 2 AM UTC six-task daily job that generates a random 50–150 synthetic patients per run, refreshes Lakeflow, creates presentation views, refreshes policy docs, retrains ML and validates the run, subject to observed missed dates and Free Edition quotas. The ML model is a RandomForest classifier achieving about patient-held-out evaluation (verify current MLflow metrics) on triage acuity prediction, registered in Unity Catalog with a Champion alias. The AI/BI dashboard has 14 widgets across 6 SQL datasets, independently verified, and the Genie space passed all 8 benchmark questions."
 # MAGIC
 # MAGIC **[CareFlow360 — Complete Project Presentation, Cell 3]**
 # MAGIC
@@ -32,7 +32,7 @@
 # MAGIC
 # MAGIC **[01_generate_sample_data, Cell 3]**
 # MAGIC
-# MAGIC "Here in cell 3, you can see the widget parameters that control the data generation. The job passes catalog=workspace, schema=careflow360, volume=landing, num_patients=100, and critically, reset_events=false — meaning each daily run appends 100 new patients rather than starting fresh. This gives us continuous data growth. The code also validates all inputs for safety — it checks that catalog, schema, and volume names match a safe identifier pattern, and that num_patients is between 50 and 100,000."
+# MAGIC "Here in cell 3, you can see the widget parameters that control the data generation. The job passes catalog=workspace, schema=careflow360, volume=landing, num_patients=random, and critically, reset_events=false — meaning each daily run appends a random 50 to 150 new patients rather than starting fresh, and the actual count is published through the run manifest so downstream validation checks the real number. This gives us continuous data growth. The code also validates all inputs for safety — it checks that catalog, schema, and volume names match a safe identifier pattern, and that resolved num_patients is between 50 and 2,000."
 # MAGIC
 # MAGIC **[01_generate_sample_data, Cell 4]**
 # MAGIC
@@ -148,7 +148,7 @@
 # MAGIC
 # MAGIC **[CareFlow360 — Complete Project Presentation, Cell 7]**
 # MAGIC
-# MAGIC "The dashboard is an AI/BI Lakeview dashboard called 'CareFlow360 Hospital Command Center'. It has 10 widgets across 6 SQL datasets, all reading from the `careflow360_gold` presentation schema. The top row has 5 KPI counters: Active Patients showing 51, ED Census at 10, ICU Census at 8, Active Alerts at 9, and Average Acuity at 3.29. Below that, there's a department census bar chart showing patients across 6 departments, a triage acuity pie chart with 5 ESI levels, a patient flow line chart, a live alerts table with 50 rows, and an ML predictions bar chart comparing predicted vs actual acuity levels."
+# MAGIC "The dashboard is an AI/BI Lakeview dashboard called 'CareFlow360 Hospital Command Center'. It has 14 widgets across 6 SQL datasets, all reading from the `careflow360_gold` presentation schema. The top row has 5 KPI counters: Active Patients, ED Census, ICU Census, Active Alerts, and Average Acuity — values refresh with every daily run (Active Patients was 1,000 as of November 3, 2026). Below that, there's a department census bar chart showing patients across 6 departments, a triage acuity pie chart with 5 ESI levels, a patient flow line chart, a live alerts table, and an ML predictions bar chart comparing predicted vs actual acuity levels."
 # MAGIC
 # MAGIC **[CareFlow360 — Complete Project Presentation, Cell 8]**
 # MAGIC
@@ -166,7 +166,7 @@
 # MAGIC
 # MAGIC "The entire project is deployed using Declarative Automation Bundles, or DAB. The DAB configuration is split across YAML files: `01_uc.yml` defines the 4 Unity Catalog schemas, `02_pipeline.yml` defines the SDP pipeline, and `03_jobs.yml` defines the daily incremental job. The root `databricks.yml` ties it all together. This means the entire project — schemas, pipeline, job, volumes — can be deployed with a single `bundle deploy` command, making it fully reproducible."
 # MAGIC
-# MAGIC "The daily job runs at 2 AM UTC and has 4 sequential tasks. Task 1, `generate_daily_patients`, generates 100 new patients and writes JSON to the landing volume — it takes about 39 seconds. Task 2, `refresh_pipeline`, triggers the SDP pipeline to process the new data through Bronze, Silver, and Gold — this takes about 6 minutes. Task 3, `create_presentation_views`, updates the views in the three presentation schemas — 29 seconds. And Task 4, `train_ml_model`, retrains the RandomForest model with the growing dataset and writes fresh predictions — about 46 seconds. Total runtime is about 9 minutes."
+# MAGIC "The daily job runs at 2 AM UTC and now has six tasks. Task 1, `generate_daily_patients`, generates a random 50 to 150 new patients and writes JSON to the landing volume. Task 2, `refresh_pipeline`, triggers the SDP pipeline to process the new data through Bronze, Silver, and Gold — this is the long step, several minutes. Task 3, `create_presentation_views`, updates the sixteen views in the three presentation schemas. Task 4, `create_policy_docs`, keeps the six synthetic policy chunks fresh. Task 5, `train_ml_model`, retrains the RandomForest model with the growing dataset and writes fresh predictions. And Task 6, `validate_project`, runs the read-only acceptance gates — it checks the run's actual patient count from the manifest across Bronze, Silver, Gold Patient 360, and predictions. Total runtime is under ten minutes."
 # MAGIC
 # MAGIC ---
 # MAGIC
@@ -182,7 +182,7 @@
 # MAGIC
 # MAGIC "Fix number 3: The MLflow experiment path defaults to a workspace directory called `careflow360` under the user's home folder, but that directory didn't exist. MLflow couldn't create the experiment. I created the missing directory."
 # MAGIC
-# MAGIC "After all three fixes, the job completed successfully — all 4 tasks passed in about 9 minutes total."
+# MAGIC "After all three fixes, the job completed successfully — all 4 tasks passed in about 9 minutes total. The job has since grown to six tasks."
 # MAGIC
 # MAGIC **[CareFlow360 — Complete Project Presentation, Cell 11]**
 # MAGIC
@@ -194,7 +194,7 @@
 # MAGIC
 # MAGIC **[CareFlow360 — Complete Project Presentation, Cell 12]**
 # MAGIC
-# MAGIC "To summarize, CareFlow360 demonstrates a complete, production-ready hospital analytics platform on Databricks Free Edition. It covers the full medallion architecture with 3-schema separation for governance, a serverless SDP pipeline with Auto Loader and SCD Type 2, a daily incremental job for continuous data growth and ML retraining, an AI/BI dashboard with 10 verified widgets, a Genie space with 8 out of 8 benchmarks passing, a UC-registered ML model with MLflow tracking, a DAB deployment for full reproducibility, and AI functions for classification, extraction, and querying. The platform is fully operational as of October 10, 2026, with a daily schedule that runs all 4 tasks end-to-end without intervention."
+# MAGIC "To summarize, CareFlow360 demonstrates a complete, production-ready hospital analytics platform on Databricks Free Edition. It covers the full medallion architecture with 3-schema separation for governance, a serverless SDP pipeline with Auto Loader and SCD Type 2, a daily incremental job for continuous data growth and ML retraining, an AI/BI dashboard with 14 verified widgets, a Genie space with 8 out of 8 benchmarks passing, a UC-registered ML model with MLflow tracking, a DAB deployment for full reproducibility, and AI functions for classification, extraction, and querying. The platform is fully operational as of November 3, 2026, with a daily schedule that runs all 6 tasks end-to-end (random 50–150 patients per run) without intervention."
 # MAGIC
 # MAGIC "If you want to explore further, I've created three companion notebooks: the 'Complete Project Presentation' notebook has the full 16-section overview, the 'Summary Each Step' notebook has step-by-step learning notes for each component, and the 'Every Notebook Explained' notebook details every notebook's purpose, code patterns, and design decisions. Thank you."
 # MAGIC
@@ -205,14 +205,14 @@
 # MAGIC | Reference | Type | ID / Location |
 # MAGIC | --- | --- | --- |
 # MAGIC | `01_generate_sample_data` | Notebook | ID 1526984651564664, 5 cells |
-# MAGIC | `01_bronze.py` | Pipeline source | `core/src/pipelines/01_bronze.py`, 139 lines |
-# MAGIC | `02_silver.py` | Pipeline source | `core/src/pipelines/02_silver.py`, 161 lines |
-# MAGIC | `03_gold.py` | Pipeline source | `core/src/pipelines/03_gold.py`, 154 lines |
+# MAGIC | `01_bronze.py` | Pipeline source | `src/pipelines/01_bronze.py`, 139 lines |
+# MAGIC | `02_silver.py` | Pipeline source | `src/pipelines/02_silver.py`, 161 lines |
+# MAGIC | `03_gold.py` | Pipeline source | `src/pipelines/03_gold.py`, 154 lines |
 # MAGIC | `03_create_views` | Notebook | ID 1064656254159981, 1 cell |
 # MAGIC | `04_train_triage_model` | Notebook | ID 1526984651564665, 7 cells |
-# MAGIC | `CareFlow360 — Complete Project Presentation` | Notebook | ID 255196183767644, 12 cells |
-# MAGIC | `CareFlow360 — Summary Each Step` | Notebook | ID 1018675845605347, 12 cells |
-# MAGIC | `CareFlow360 — Every Notebook Explained` | Notebook | ID 1018675845605346, 9 cells |
+# MAGIC | `CareFlow360 — Complete Project Presentation` | Notebook | ID 3441798886909984, 13 cells |
+# MAGIC | `CareFlow360 — Summary Each Step` | Notebook | ID 3441798886909987, 12 cells |
+# MAGIC | `CareFlow360 — Every Notebook Explained` | Notebook | ID 3441798886909986, 9 cells |
 # MAGIC | `CareFlow360 Daily Incremental Pipeline` | Job | ID 484367296292508 |
 # MAGIC | `CareFlow360_DAB_Pipeline` | SDP Pipeline | ID dde7c33b-8715-4666-8f6b-ad2af0848966 |
 # MAGIC | `CareFlow360 Hospital Command Center` | Dashboard | ID 01f1beeb451e10439c0b4bf6aa8eeb70 |

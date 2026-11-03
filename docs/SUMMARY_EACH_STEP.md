@@ -27,14 +27,14 @@
 ### Key Learning: Infrastructure as Code
 - **Idempotent creation** — `CREATE SCHEMA IF NOT EXISTS` makes the script re-runnable
 - **UC volumes over DBFS** — Volumes are governed, access-controlled, and auditable
-- **Single pipeline schema** — All 17 tables in one schema, views in separate schemas for RBAC
+- **Single pipeline schema** — All 15 pipeline datasets in one schema, views in separate schemas for RBAC
 
 ---
 
 ## 📊 Step 1: Sample Data Generation
 
 ### What Was Built
-- 600 synthetic patients with deterministic data
+- Initial seed run: 600 synthetic patients; scheduled runs now generate a random 50–150 per run
 - 4 event types: triage (600), vitals (2,065), ADT (1,385), chief complaints (600)
 
 ### Key Learning: Deterministic Synthetic Data
@@ -137,7 +137,7 @@ latest = df.withColumn("_rn", F.row_number().over(w)).where("_rn = 1")
 ### What Was Built
 - RandomForest classifier (96 trees, patient-held-out evaluation (verify current MLflow metrics))
 - MLflow tracking + UC model registry with Champion alias
-- 600 batch-scored predictions
+- Batch-scored predictions for all current patients (1,000 as of Nov 3, 2026)
 
 ### Key Learning: Production ML on Databricks
 
@@ -148,7 +148,7 @@ pipeline = Pipeline([
         ("numeric", numeric_pipe, numeric_features),
         ("categorical", categorical_pipe, categorical_features),
     ])),
-    ("model", RandomForestClassifier(n_estimators=160, max_depth=12))
+    ("model", RandomForestClassifier(n_estimators=96, max_depth=12))
 ])
 ```
 

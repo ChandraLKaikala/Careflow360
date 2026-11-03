@@ -64,21 +64,22 @@ After pulling the latest GitHub `main` into your Databricks Git folder, open
    **`verify_with_new_run=true`**, then run all cells again. This writes a
    job-settings backup to the authenticated user's private Databricks workspace
    folder, updates only the **existing** job (using `jobs.update`), preserves the
-   original schedule/pipeline ID, and triggers one supervised +100 synthetic
-   patient run.
-3. The final job task reads the **immutable run manifest**, checks its expected event counts and requires **100 distinct new patient IDs across all four event streams in both Bronze and Silver**, plus Gold Patient 360 and predictions (10 checks). The helper also
-   compares the before/after Patient 360 counts and fails if the increase is
-   not exactly 100. For the previously observed 600-row baseline, **700 rows
-   is the expected result, not a guaranteed result**.
+   original schedule/pipeline ID, and triggers one supervised synthetic
+   patient run (random 50–150).
+3. The final job task reads the **immutable run manifest**, checks its expected event counts and requires the run's **actual new-patient count (published via task values) across all four event streams in both Bronze and Silver**, plus Gold Patient 360 and predictions (10 checks). The helper also
+   compares the before/after Patient 360 counts and fails if the increase does
+   not match the run's expected count. (The November 3, 2026 in-place upgrade
+   run verified a random 50–150 insert against the live baseline of 1,000
+   patients.)
 4. If any preflight check fails, the helper must not update the job. If a
    post-update or live data check fails, inspect the logged job/task outputs,
    the saved backup, and pipeline errors. Never reset or full-refresh the
    pipeline to force success.
 
-This notebook upgrades the current four-task job to the same *functional*
+This notebook has already been applied (2026-11-03): the existing job now runs the same *functional*
 six-task graph as GitHub, while retaining the live task keys
 (`generate_daily_patients`, `refresh_pipeline`,
-`create_presentation_views`, `train_ml_model`) and adding
+`create_presentation_views`, `train_ml_model`) and having added
 `create_policy_docs` and `validate_project`. Existing run histories,
 permissions, and the cron remain attached to the same job ID. The helper
 requires an authenticated user with permission to edit and run that job;
