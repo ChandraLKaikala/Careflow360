@@ -132,6 +132,26 @@ if spark.catalog.tableExists(prediction):
     if invalid:
         errors.append(f"Invalid batch prediction labels: {invalid}")
 
+if spark.catalog.tableExists(prediction) and spark.catalog.tableExists(patient):
+    # Current-patient prediction coverage: every Patient 360 patient must have
+    # at least one stored prediction. The table is append-only per patient, so
+    # a returning patient's stored prediction may reference an earlier
+    # encounter — coverage is by patient_id, not encounter.
+    uncovered = (
+        spark.table(patient).select("patient_id").distinct()
+        .join(
+            spark.table(prediction).select("patient_id").distinct(),
+            "patient_id", "left_anti",
+        )
+        .limit(1).count()
+    )
+    if uncovered:
+        errors.append(
+            "Prediction coverage gap: current Patient 360 patients without any stored prediction"
+        )
+    else:
+        print("Prediction coverage: every current patient has a stored prediction")
+
 if spark.catalog.tableExists(command):
     freshness = spark.table(command).agg(
         F.count("*").alias("row_count"),

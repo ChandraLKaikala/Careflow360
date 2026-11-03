@@ -84,7 +84,7 @@ If you want the easiest Free Edition path:
 3. Select **serverless** compute.
 4. Choose **Triggered** mode initially.
 5. Add the source folder:
-   `core/src/pipelines/`
+   `src/pipelines/`
 6. Catalog: `<CATALOG>`.
 7. Schema: `careflow360_dev`.
 8. Add these pipeline configuration entries:

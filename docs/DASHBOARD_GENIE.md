@@ -2,6 +2,10 @@
 
 ## Dashboard
 
+**CareFlow360 — Hospital Command Center** (canonical, published): 3 pages, 29 widgets, 18 SQL datasets. Pages: *Command Overview* (KPIs, census, acuity, flow), *Operations & Freshness* (hours since last KPI snapshot/pipeline refresh/successful job, last-10 job runs, daily run coverage and missing-date counters, source-timestamp ages), and *Quality & Model Monitoring* (Patient 360 integrity, invalid prediction labels, batch predictions, alert sources).
+
+**CareFlow360 — Hospital Operations Dashboard** (companion, published): 1 page, 14 widgets, 6 datasets — a lightweight summary including daily arrivals, prediction distribution, model agreement and AI complaint categories. Treat the Command Center as the single source of truth for operational review; keep this one for quick sharing.
+
 Use the SQL datasets in `sql/dashboard_queries.sql` to create a dashboard named:
 
 **CareFlow360 — Hospital Command Center**

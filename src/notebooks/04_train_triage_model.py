@@ -222,8 +222,37 @@ print("Metrics:", metrics)
 
 registered = mlflow.register_model(f"runs:/{run_id}/model", full_model_name)
 client = MlflowClient()
-client.set_registered_model_alias(full_model_name, "Champion", registered.version)
-print(f"Registered version {registered.version}; alias Champion set")
+
+# Release policy: a candidate must beat the majority-class baseline (checked
+# above) AND must not regress against the current Champion. Beating a dummy
+# classifier is not enough to justify replacing a deployed model.
+previous_champion = None
+try:
+    previous_champion = client.get_model_version_by_alias(full_model_name, "Champion")
+except Exception:
+    previous_champion = None
+
+if previous_champion is None:
+    client.set_registered_model_alias(full_model_name, "Champion", registered.version)
+    print(f"No previous Champion; alias Champion set to version {registered.version}")
+else:
+    prev_run = client.get_run(previous_champion.run_id)
+    prev_f1 = float(prev_run.data.metrics.get("f1_macro", float("nan")))
+    cand_f1 = float(metrics["f1_macro"])
+    if cand_f1 >= prev_f1:
+        client.set_registered_model_alias(full_model_name, "Champion", registered.version)
+        print(
+            f"Candidate f1_macro={cand_f1:.4f} >= previous Champion "
+            f"f1_macro={prev_f1:.4f}; alias Champion moved to version {registered.version}"
+        )
+    else:
+        print(
+            f"WARNING: candidate f1_macro={cand_f1:.4f} < previous Champion "
+            f"f1_macro={prev_f1:.4f}. Champion stays on version "
+            f"{previous_champion.version}; candidate registered as version "
+            f"{registered.version} without alias promotion."
+        )
+print(f"Registered version {registered.version}")
 
 # COMMAND ----------
 

@@ -6,7 +6,7 @@ This page distinguishes **offline source checks** from **actual Databricks works
 
 - Six-task source DAB DAG: generate synthetic events → refresh Lakeflow → create presentation views → (create policy docs + train triage model) → validate project.
 - One serverless Lakeflow ETL pipeline; Bronze, Silver, and Gold.
-- Physical outputs in the deployed Gold presentation schema: `triage_predictions`, `policy_chunks`; five Gold presentation views. In the unified quickstart schema the notebook outputs are named `gold_triage_predictions` and `gold_policy_chunks`.
+- Physical outputs in the deployed Gold presentation schema: `triage_predictions`, `policy_chunks`; seven Gold presentation views (including `triage_model_quality` for historical agreement and `triage_predictions_current` for current-encounter predictions). In the unified quickstart schema the notebook outputs are named `gold_triage_predictions` and `gold_policy_chunks`.
 - Scheduled source DAB job: **02:00 UTC**, `max_concurrent_runs: 1`, triggered refresh (not continuous streaming).
 - **Insert-new-patients contract:** `01_generate_sample_data.py` uses a distinct `{{job.run_id}}` per job execution. Patient 360 is a **Lakeflow materialized view**, not a manually merged Delta table: it gains one row per new `patient_id` when the pipeline refreshes, while still showing the latest state for existing patients.
 - **Predictions contract:** The ML scorer uses insert-only Delta `MERGE` keyed by `patient_id`; existing matches are left unchanged and new patient IDs are added. The checked live Delta table lists `appendOnly` as a **supported feature** but did not set the enforcement property `delta.appendOnly=true`. Its current column schema matches the new scorer; runtime MERGE must still be tested after deployment.
@@ -27,7 +27,7 @@ Required test categories:
 2. Source integrity: the single `src/` tree is the canonical source; the former root/package mirror check was retired when the duplicate Free Edition copy was removed (2026-11-03).
 3. Generator outputs: 2 append runs of 50 synthetic patients give 100 distinct triage/patient identifiers, matching chief-complaint counts, admissible acuities, expected ADT types, valid vitals, historical timestamps, and separate manifests.
 4. Generator safety: destructive reset is rejected; event files cannot be overwritten; duplicate run IDs and interrupted-run files cannot be replayed; a 1,200-patient/20-batch replay produces no future-dated ADT events.
-5. Presentation views: expected 16 views target the correct pipeline source names, with invalid Unity Catalog identifiers rejected.
+5. Presentation views: expected 17 views target the correct pipeline source names, with invalid Unity Catalog identifiers rejected.
 6. Gold pipeline graph: all table dependencies exist; exactly 15 declared datasets including CDC SCD Type 2.
 7. Policy documents: only fabricated synthetic policy chunks with unique IDs; first creation uses an explicit Delta write and subsequent refreshes MERGE only new/changed chunks, preserving the Delta table's identity and Change Data Feed history.
 8. Model algorithm: feature schema and hyperparameters match the notebook; a local scikit-learn model fits and emits valid 1–5 predictions; **GroupShuffleSplit holds out whole patient IDs** with no train/test overlap; a stable-hash, capped sample prevents unbounded pandas collection; logging includes a dummy-classifier baseline and balanced accuracy; only newly unscored current patients are collected. This does not test the Databricks MLflow registry.
@@ -56,6 +56,10 @@ WHERE p.latest_vital_ts IS NOT NULL
 ## Required live Databricks output test — existing resources only
 
 The existing workspace job was upgraded in place (2026-11-03) to the six-task graph; live task keys may differ from the DAB source keys (`generate_sample_events` vs `generate_daily_patients`, `refresh_lakehouse` vs `refresh_pipeline`, `train_triage_model` vs `train_ml_model`).
+
+### Job history check (2026-11-03)
+Queried `system.lakeflow.job_run_timeline` for job `484367296292508`: **zero FAILED, TIMEDOUT, CANCELED or SKIPPED runs**; the most recent scheduled and manual runs (including the 2026-11-03 upgrade-verification run) all ended `SUCCESS`. Historical failure investigations (the October RESOURCE_NOT_FOUND era and the November upgrade attempts) are documented in [DATABRICKS_WORKSPACE_SYNC.md](DATABRICKS_WORKSPACE_SYNC.md); per-run durations and daily-coverage gaps are visible on the dashboard's Operations & Freshness page and in `system.lakeflow.job_run_timeline` / `job_task_timeline`.
+
 Do **not** create another job or pipeline to test the upgrade. Backup the original settings,
 compare the bundle plan and bind resources only after reviewing differences.
 Follow [DATABRICKS_WORKSPACE_SYNC.md](DATABRICKS_WORKSPACE_SYNC.md).

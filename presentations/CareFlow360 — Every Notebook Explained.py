@@ -17,7 +17,7 @@
 # MAGIC | --- | --- | --- | --- |
 # MAGIC | 0 | `00_preflight` | `src/notebooks/` | UC schema + volume setup |
 # MAGIC | 1 | `01_generate_sample_data` | `src/notebooks/` | Synthetic patient data generator (random 50–150/run) |
-# MAGIC | 2 | `03_create_views` | `src/notebooks/` | Presentation layer views (16 views) |
+# MAGIC | 2 | `03_create_views` | `src/notebooks/` | Presentation layer views (17 views) |
 # MAGIC | 3 | `04_train_triage_model` | `src/notebooks/` | ML training + MLflow + UC registration |
 # MAGIC | 4 | `05_create_policy_docs` | `src/notebooks/` | Policy document chunking for RAG |
 # MAGIC | 5 | `06_validate` | `src/notebooks/` | Runtime data validation |
@@ -109,7 +109,7 @@
 # MAGIC 2. Creates views that point to pipeline tables in `workspace.careflow360`:
 # MAGIC    - 4 Bronze views (triage, vitals, adt, chief_complaints)
 # MAGIC    - 6 Silver views (triage, triage_quarantine, vitals, adt, chief_complaints, patient_location_history)
-# MAGIC    - 5 Gold views (patient_360, hospital_command_center, department_hourly, live_alerts, triage_training)
+# MAGIC    - 7 Gold views (patient_360, hospital_command_center, department_hourly, live_alerts, triage_training, triage_model_quality, triage_predictions_current)
 # MAGIC 3. Each view strips the layer prefix (e.g., `bronze_triage` → `triage`)
 # MAGIC
 # MAGIC ### Key Code Pattern
@@ -145,7 +145,7 @@
 # MAGIC 3. Splits **by patient ID** with GroupShuffleSplit, preventing the same patient's different encounters from leaking between train and holdout.
 # MAGIC 4. Fits a scikit-learn pipeline with imputation, OneHotEncoder and a 96-tree RandomForest (depth 12, maximum 2 CPU workers).
 # MAGIC 5. Logs measured accuracy, balanced accuracy, macro-F1, macro-precision/recall, sample capping, distinct train/test patient counts and a majority-class baseline to MLflow.
-# MAGIC 6. Registers a Unity Catalog model under the configured Gold schema and updates the `Champion` alias.
+# MAGIC 6. Registers a Unity Catalog model under the configured Gold schema and promotes it to the `Champion` alias **only if its macro-F1 meets or beats the incumbent Champion's**; otherwise the alias is left unchanged and a warning is logged.
 # MAGIC 7. Finds **previously unseen current patient IDs** with a Spark left-anti join, scores only their latest encounter, and inserts only new IDs using Delta MERGE; historical predictions remain untouched.
 # MAGIC
 # MAGIC **Expected physical prediction target (split layout)**: `workspace.careflow360_gold.triage_predictions`.
@@ -238,7 +238,7 @@
 # MAGIC | --- | --- | --- | --- |
 # MAGIC | `01_bronze.py` | Bronze | 4 streaming tables | Auto Loader, StructType schema, expect_or_drop |
 # MAGIC | `02_silver.py` | Silver | 6 tables + quarantine | Dedup, expect_or_quarantine, SCD2 (AUTO CDC), derived columns |
-# MAGIC | `03_gold.py` | Gold | 5 materialized views + 2 physical | Aggregations, joins, ML features, RAG chunks |
+# MAGIC | `03_gold.py` | Gold | 5 materialized views | Aggregations, joins, ML features (predictions/policy tables are notebook-managed) |
 # MAGIC
 # MAGIC These files are deployed via DAB to the pipeline's deployment directory and executed by the SDP pipeline engine.
 # MAGIC

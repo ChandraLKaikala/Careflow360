@@ -1,5 +1,14 @@
 # CareFlow360 Changelog
 
+## [2026-11-03] - External P0-P1 Audit Fixes: Champion Guard, Coverage Check, Current View
+
+- **Champion-comparison release policy (P0/P1):** `04_train_triage_model` no longer unconditionally promotes a newly registered model to `Champion`. It fetches the prior Champion's macro-F1, promotes the candidate only if it meets or beats the incumbent, and otherwise leaves the alias unchanged with a warning.
+- **Prediction coverage check (P0):** `06_validate` now verifies every current Patient 360 patient has at least one prediction row (append-only semantics - a stored prediction may reflect a previous encounter), using bounded existence probes instead of full-table scans.
+- **New `triage_predictions_current` view (P0):** `03_create_views` now creates a current-encounter predictions view in the Gold presentation schema; `triage_model_quality`'s comment clarifies its historical/in-sample nature. Presentation-view count is now **17** (4 bronze, 6 silver, 7 gold).
+- **Ripple doc updates:** all assets referencing "16 presentation views" were updated to 17 across README, docs (DASHBOARD_GENIE, EVERY_NOTEBOOK_EXPLAINED, END_TO_END_VERIFICATION, FREE_EDITION_NOTEBOOK_AUDIT, SUMMARY_EACH_STEP, QUICKSTART) and the four presentation notebooks.
+- **Dashboard factual corrections:** canonical **Command Center** = 3 pages, 29 widgets, 18 datasets; companion **Operations Dashboard** = 1 page, 14 widgets, 6 datasets. README architecture diagram updated to 7 gold views + 3 physical tables; deployment notice updated to the verified in-place Nov 3 upgrade (zero failed/timed-out/canceled/skipped runs in `system.lakeflow.job_run_timeline`).
+- **Docs:** END_TO_END_VERIFICATION gained a job-history check section; presentation notebooks' component-status tables, growth trajectory, gold-layer inventory and ML/dashboard claims were refreshed to Nov 3 facts (1,000 current patients, guarded Champion promotion, insert-only scoring).
+
 ## [2026-11-03] - Repository Cleanup: Single Canonical Source Tree
 
 - **Removed the duplicated `CareFlow360_Databricks_Free_Edition/` folder** (60 tracked files): its `core/` tree mirrored the root `src/`, `resources/` and `docs/` copies, and it carried template boilerplate (`UPLOAD_FIRST.txt`, `BUILD_INFO.txt`, `SETUP_COMMANDS.md`, `KAGGLE_DATA.md.bak`) plus four unused extension stubs (`genie`, `ai_search`, `model_serving`, `lakebase`) for features that are not available on Databricks Free Edition and were never deployed. All history remains recoverable via Git.

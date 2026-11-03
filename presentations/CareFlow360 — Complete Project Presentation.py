@@ -47,15 +47,15 @@
 # MAGIC | **SDP Pipeline** | ✅ Operational | 15 datasets (4 Bronze, 6 Silver, 5 Gold), serverless + photon |
 # MAGIC | **Daily Job** | ✅ Operational | 6-task workflow: generate events → refresh pipeline → create views → policy docs → train ML → validate |
 # MAGIC | **ML Model** | ✅ Trained | RandomForest triage classifier, measured patient-held-out metrics (inspect MLflow), UC-registered with Champion alias |
-# MAGIC | **AI/BI Dashboard** | ✅ Published | 14 verified widgets across 6 SQL datasets |
+# MAGIC | **AI/BI Dashboards** | ✅ Published | Command Center: 3 pages, 29 widgets, 18 datasets; companion Operations Dashboard: 14 widgets across 6 SQL datasets |
 # MAGIC | **Genie Space** | ✅ Production-ready | 8/8 benchmark questions passed |
 # MAGIC | **UC Governance** | ✅ Applied | Tags, comments, Delta properties, 3-schema separation |
 # MAGIC | **DAB** | ✅ Deployed | Declarative Automation Bundles with multi-resource YAML |
 # MAGIC | **AI Functions** | ✅ Tested | ai_classify, ai_extract, ai_forecast, ai_query |
 # MAGIC
 # MAGIC ### Scale
-# MAGIC - **600+ patients** in the training dataset (growing 100/day via scheduled job)
-# MAGIC - **4,650+ events** across triage, vitals, ADT, and chief complaints
+# MAGIC - **1,000+ current patients** in the dataset (growing ~100/day via scheduled job, random 50–150 per run)
+# MAGIC - **7,500+ events** across triage, vitals, ADT, and chief complaints
 # MAGIC - **15+ pipeline datasets** materialized through the medallion layers
 # MAGIC - **3 presentation schemas** (bronze, silver, gold) with views for consumer access
 
@@ -123,7 +123,7 @@
 # MAGIC | `workspace.careflow360` | SDP pipeline working schema | 15 pipeline datasets (streaming tables + materialized views) plus physical Gold tables | Data engineering only |
 # MAGIC | `workspace.careflow360_bronze` | Bronze presentation | 4 views → `careflow360.bronze_*` | Restricted to DE team |
 # MAGIC | `workspace.careflow360_silver` | Silver presentation | 6 views → `careflow360.silver_*` | Analysts + ML engineers |
-# MAGIC | `workspace.careflow360_gold` | Gold presentation | 5 views + 2 physical tables | All consumers |
+# MAGIC | `workspace.careflow360_gold` | Gold presentation | 7 views + 3 physical tables | All consumers |
 # MAGIC
 # MAGIC ### Bronze Layer (4 Streaming Tables)
 # MAGIC
@@ -157,17 +157,19 @@
 # MAGIC - SCD Type 2 with `AUTO CDC` for patient location history
 # MAGIC - Deduplication using `ROW_NUMBER()` window functions
 # MAGIC
-# MAGIC ### Gold Layer (5 Materialized Views + 2 Physical Tables)
+# MAGIC ### Gold Layer (5 Pipeline MVs + 2 Notebook-Managed Views + 3 Physical Tables)
 # MAGIC
 # MAGIC | Table | Type | Description | Rows |
 # MAGIC | --- | --- | --- | --- |
-# MAGIC | `gold_patient_360` | Materialized View | Comprehensive patient view joining triage + vitals + ADT + complaints | ~700 |
+# MAGIC | `gold_patient_360` | Materialized View | Comprehensive patient view joining triage + vitals + ADT + complaints | ~1,000 |
 # MAGIC | `gold_hospital_command_center` | Materialized View | Hospital-wide KPIs: active patients, ED census, ICU census, alerts, avg acuity | 3 |
 # MAGIC | `gold_department_hourly` | Materialized View | Department-level hourly metrics: census, arrivals, avg wait time | 39 |
 # MAGIC | `gold_live_alerts` | Materialized View | Real-time clinical alerts: abnormal vitals, high ESI, ED boarding | ~20 |
-# MAGIC | `gold_triage_training` | Materialized View | ML training features: numeric + categorical features for triage prediction | ~700 |
-# MAGIC | `gold_triage_predictions` | Physical Table | Batch-scored predictions from the trained RandomForest model | ~700 |
-# MAGIC | `gold_policy_chunks` | Physical Table | Policy document chunks for RAG / AI Search | 6 |
+# MAGIC | `gold_triage_training` | Materialized View | ML training features: numeric + categorical features for triage prediction | ~2,800+ |
+# MAGIC | `triage_model_quality` (gold schema) | View | Historical prediction-vs-actual agreement (in-sample) | varies |
+# MAGIC | `triage_predictions_current` (gold schema) | View | Current-encounter prediction per current patient | ~1,000 |
+# MAGIC | `triage_predictions` (gold schema) | Physical Table | Batch-scored predictions from the Champion RandomForest model (insert-only) | ~1,000 |
+# MAGIC | `policy_chunks` (gold schema) | Physical Table | Policy document chunks for RAG / AI Search | 6 |
 
 # COMMAND ----------
 
@@ -193,10 +195,10 @@
 # MAGIC The pipeline uses 3 Python source files deployed via DAB:
 # MAGIC
 # MAGIC ```
-# MAGIC core/src/pipelines/
+# MAGIC src/pipelines/
 # MAGIC ├── 01_bronze.py   — 4 Auto Loader streaming tables with schema enforcement
 # MAGIC ├── 02_silver.py   — 6 cleansing/enrichment tables with DQ expectations + SCD2
-# MAGIC └── 03_gold.py     — 5 materialized views + 2 physical tables for analytics/ML/RAG
+# MAGIC └── 03_gold.py     — 5 materialized views for analytics/ML (the views notebook adds model-quality and current-prediction gold views)
 # MAGIC ```
 # MAGIC
 # MAGIC ### Pipeline Configuration Properties
@@ -285,7 +287,7 @@
 # MAGIC #### Task 3: create_presentation_views
 # MAGIC - **Notebook**: `03_create_views` (created Oct 10 — see Fixes section)
 # MAGIC - **Parameters**: `catalog=workspace, pipeline_schema=careflow360, bronze/silver/gold_schema=careflow360_*`
-# MAGIC - **Purpose**: Creates/updates the 16 views in the 3 presentation schemas pointing to pipeline tables, and maintains the AI-classified chief_complaint_categories Gold table
+# MAGIC - **Purpose**: Creates/updates the 17 views in the 3 presentation schemas pointing to pipeline tables, and maintains the AI-classified chief_complaint_categories Gold table
 # MAGIC - **Timeout**: 10 minutes
 # MAGIC
 # MAGIC #### Task 4: create_policy_docs
@@ -308,7 +310,7 @@
 # MAGIC | --- | --- |
 # MAGIC | generate_daily_patients (live key) | ✅ SUCCESS — random 50–150 patients per run |
 # MAGIC | refresh_pipeline (live key) | ✅ SUCCESS — incremental Bronze → Silver → Gold |
-# MAGIC | create_presentation_views | ✅ SUCCESS — 16 presentation views |
+# MAGIC | create_presentation_views | ✅ SUCCESS — 17 presentation views |
 # MAGIC | create_policy_docs | ✅ SUCCESS — 6 policy chunks |
 # MAGIC | train_ml_model (live key) | ✅ SUCCESS — predictions written |
 # MAGIC | validate_project | ✅ SUCCESS — all acceptance gates pass |
@@ -472,7 +474,7 @@
 # MAGIC | --- | --- | --- |
 # MAGIC | 4 UC schemas | Unity Catalog schemas | ✅ Created (careflow360, _bronze, _silver, _gold) |
 # MAGIC | SDP pipeline | Lakeflow Spark Declarative Pipeline | ✅ Deployed (serverless, photon) |
-# MAGIC | Daily job | Lakeflow Job (4 tasks) | ✅ Deployed & operational |
+# MAGIC | Daily job | Lakeflow Job (6 tasks) | ✅ Deployed & operational |
 # MAGIC | Landing volume | UC volume | ✅ Created |
 # MAGIC | Dashboard | AI/BI Lakeview dashboard | ✅ Published |
 # MAGIC | Genie space | Genie data-room | ✅ Configured & verified |
@@ -605,7 +607,7 @@
 # MAGIC %md
 # MAGIC ## 14. Project Health Summary {#project-health}
 # MAGIC
-# MAGIC ### Component Status (as of Oct 10, 2026)
+# MAGIC ### Component Status (as of Nov 3, 2026)
 # MAGIC
 # MAGIC | Component | Status | Key Metrics |
 # MAGIC | --- | --- | --- |
@@ -613,11 +615,11 @@
 # MAGIC | **Daily Job** | ✅ Operational | All 6 tasks SUCCESS, schedule active (2 AM UTC) |
 # MAGIC | **Bronze Tables** | ✅ 4 tables | Auto Loader streaming, schema-enforced, DQ-gated |
 # MAGIC | **Silver Tables** | ✅ 6 tables | Cleansed, enriched, SCD2, quarantine pattern |
-# MAGIC | **Gold Tables** | ✅ 9 tables | 6 presentation views + 3 physical (predictions, policy chunks, chief-complaint categories) |
-# MAGIC | **Presentation Views** | ✅ 16 views | 4 bronze + 6 silver + 6 gold (incl. triage_model_quality) across 3 schemas |
+# MAGIC | **Gold Assets** | ✅ 10 assets | 7 presentation views + 3 physical (predictions, policy chunks, chief-complaint categories) |
+# MAGIC | **Presentation Views** | ✅ 17 views | 4 bronze + 6 silver + 7 gold (incl. triage_model_quality, triage_predictions_current) across 3 schemas |
 # MAGIC | **ML Model** | ✅ Trained | RandomForest, measured patient-held-out metrics (inspect MLflow), UC Champion alias |
 # MAGIC | **MLflow Experiment** | ✅ Created | `/Workspace/Users/.../careflow360/triage_experiment` |
-# MAGIC | **AI/BI Dashboard** | ✅ Published | 14 widgets, 6 datasets, all verified |
+# MAGIC | **AI/BI Dashboards** | ✅ Published | Command Center: 3 pages, 29 widgets, 18 datasets; companion Operations Dashboard: 1 page, 14 widgets, 6 datasets |
 # MAGIC | **Genie Space** | ✅ Production-ready | 8/8 benchmarks passed |
 # MAGIC | **UC Governance** | ✅ Applied | Tags, comments, Delta properties, 3-schema separation |
 # MAGIC | **DAB** | ✅ Deployed | Multi-resource YAML, all resources created |
@@ -629,10 +631,10 @@
 # MAGIC
 # MAGIC | Timeframe | Estimated Patients | Estimated Events |
 # MAGIC | --- | --- | --- |
-# MAGIC | Day 0 (current) | ~700 | ~4,650 |
-# MAGIC | Day 7 | ~1,400 | ~9,300 |
-# MAGIC | Day 30 | ~3,700 | ~24,600 |
-# MAGIC | Day 90 | ~9,700 | ~64,600 |
+# MAGIC | Day 0 (current, Nov 3) | ~1,000 | ~6,600 |
+# MAGIC | Day 7 | ~1,700 | ~11,300 |
+# MAGIC | Day 30 | ~4,000 | ~26,600 |
+# MAGIC | Day 90 | ~10,000 | ~66,300 |
 # MAGIC
 # MAGIC ---
 # MAGIC
@@ -674,7 +676,7 @@
 # MAGIC | --- | --- | --- |
 # MAGIC | `00_preflight` | `src/notebooks/00_preflight.py` | UC schema + volume setup, pre-flight checks |
 # MAGIC | `01_generate_sample_data` | `src/notebooks/01_generate_sample_data.py` | Synthetic patient data generator (random 50–150/run) |
-# MAGIC | `03_create_views` | `src/notebooks/03_create_views.py` | 16 presentation views + AI gold assets |
+# MAGIC | `03_create_views` | `src/notebooks/03_create_views.py` | 17 presentation views + AI gold assets |
 # MAGIC | `04_train_triage_model` | `src/notebooks/04_train_triage_model.py` | RandomForest triage classifier + MLflow + UC registration |
 # MAGIC | `05_create_policy_docs` | `src/notebooks/05_create_policy_docs.py` | Policy document chunking for RAG |
 # MAGIC | `06_validate` | `src/notebooks/06_validate.py` | Runtime validation (row counts, schema, clinical ranges) |
@@ -688,7 +690,7 @@
 # MAGIC | --- | --- | --- | --- |
 # MAGIC | `01_bronze.py` | `src/pipelines/01_bronze.py` | Bronze | 4 streaming tables (Auto Loader) |
 # MAGIC | `02_silver.py` | `src/pipelines/02_silver.py` | Silver | 6 tables (cleanse + enrich + SCD2) |
-# MAGIC | `03_gold.py` | `src/pipelines/03_gold.py` | Gold | 5 materialized views + 2 physical tables |
+# MAGIC | `03_gold.py` | `src/pipelines/03_gold.py` | Gold | 5 materialized views |
 # MAGIC
 # MAGIC ### SQL Notebooks (4)
 # MAGIC
@@ -741,7 +743,7 @@
 # MAGIC - **Medallion architecture** with 3-schema separation for governance
 # MAGIC - **Serverless SDP pipeline** with Auto Loader, DQ gates, and SCD Type 2
 # MAGIC - **Daily incremental job** for continuous data growth and ML retraining
-# MAGIC - **AI/BI dashboard** with 14 verified widgets
+# MAGIC - **AI/BI dashboards** — canonical Command Center (3 pages, 29 widgets) plus a companion Operations Dashboard
 # MAGIC - **Genie space** with 8/8 benchmark questions passing
 # MAGIC - **ML model** with MLflow tracking and UC model registry
 # MAGIC - **DAB deployment** for full reproducibility

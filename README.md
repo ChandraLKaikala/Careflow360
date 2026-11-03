@@ -1,15 +1,10 @@
 # CareFlow360 — Hospital Operations Analytics Platform
 
-> **Deployment notice (November 2026):** The source-code repair branch contains safer append-only replay,
-> split-schema ML references, richer validation, and static CI. These are **GitHub changes, not yet deployed**
-> to the existing Databricks job. The existing 02:00 UTC job has missing historical run dates.
-> Before deploying, follow [the workspace sync and validation runbook](docs/DATABRICKS_WORKSPACE_SYNC.md);
-> an unbound DAB deploy can create duplicate jobs/pipelines in quota-limited Free Edition.
-> Keep this demo synthetic/public only — never load real patient PHI.
+> **Deployment notice (updated 2026-11-03):** The existing Databricks job `484367296292508` has been **upgraded in place** to the six-task configuration (append-only replay, split-schema ML references, richer validation, guarded Champion promotion) and validated end to end in the workspace; per `system.lakeflow.job_run_timeline` it has zero FAILED/TIMEDOUT/CANCELED/SKIPPED runs. Historical gaps on some earlier dates are documented in the runbook. Future changes must still follow [the workspace sync and validation runbook](docs/DATABRICKS_WORKSPACE_SYNC.md); an unbound DAB deploy can create duplicate jobs/pipelines in quota-limited Free Edition. Keep this demo synthetic/public only — never load real patient PHI.
 
 **End-to-end output acceptance checklist:** [Live workspace verification and CI scope](docs/END_TO_END_VERIFICATION.md).
 
-**Update the existing scheduled Databricks job safely:** After pulling the newest GitHub `main` in your Databricks Git folder, run [`08_upgrade_existing_daily_job.py`](src/notebooks/08_upgrade_existing_daily_job.py) first in dry-run mode, then use the explicit apply + live-verification widgets. It updates job `484367296292508` in place, not by creating a duplicate. See the [step-by-step guarded job-update instructions](docs/DATABRICKS_WORKSPACE_SYNC.md#recommended-guarded-in-place-update-for-the-existing-scheduled-job). This has **not** been executed in the workspace from GitHub CI.
+**Update the existing scheduled Databricks job safely:** After pulling the newest GitHub `main` in your Databricks Git folder, run [`08_upgrade_existing_daily_job.py`](src/notebooks/08_upgrade_existing_daily_job.py) first in dry-run mode, then use the explicit apply + live-verification widgets. It updates job `484367296292508` in place, not by creating a duplicate. See the [step-by-step guarded job-update instructions](docs/DATABRICKS_WORKSPACE_SYNC.md#recommended-guarded-in-place-update-for-the-existing-scheduled-job). This guarded flow was used for the 2026-11-03 in-place upgrade (never from GitHub CI); reuse it for any future task changes.
 
 
 ## Overview
@@ -26,16 +21,19 @@ CareFlow360 is a **synthetic hospital operations analytics platform** built on D
 │  Bronze Schema   │  Silver Schema   │  Gold Schema              │
 │  (Raw)           │  (Cleansed)      │  (Analytics)              │
 │                  │                  │                           │
-│  4 views         │  6 views         │  5 views + 2 tables       │
+│  4 views         │  6 views         │  7 views + 3 tables       │
 │  - triage        │  - triage        │  - patient_360            │
 │  - vitals        │  - triage_quar.  │  - hospital_command_ctr    │
 │  - adt           │  - vitals        │  - department_hourly       │
 │  - chief_compl.  │  - adt           │  - live_alerts             │
 │                  │  - chief_compl.  │  - triage_training        │
-│                  │  - patient_loc.  │  - triage_predictions (T) │
+│                  │  - patient_loc.  │  - triage_model_quality  │
+│                  │                  │  - triage_pred._current  │
+│                  │                  │  - triage_predictions (T) │
 │                  │                  │  - policy_chunks (T)      │
+│                  │                  │  - complaint_categs. (T)  │
 ├──────────────────┴──────────────────┴───────────────────────────┤
-│  Schema: 15 SDP datasets + 2 notebook-managed physical tables   │
+│  Schema: 15 SDP datasets + 3 notebook-managed physical tables   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,7 +50,7 @@ and it must use only synthetic/public data, never patient PHI.
 ### 1. SDP Pipeline (Spark Declarative Pipelines)
 - **Bronze layer** (`01_bronze.py`): Auto-ingests schema-enforced JSON from the landing volume
 - **Silver layer** (`02_silver.py`): Cleanses, deduplicates, computes derived columns (shock_index, pulse_pressure), quarantines bad records
-- **Gold layer** (`03_gold.py`): Aggregates patient 360, command center KPIs, hourly department flow, live alerts, training features
+- **Gold layer** (`03_gold.py`): Aggregates patient 360, command center KPIs, hourly department flow, live alerts, training features. The separate views notebook (`03_create_views.py`) exposes 17 presentation views, including `triage_model_quality` (historical agreement) and `triage_predictions_current` (current-encounter predictions)
 
 ### 2. ML Model — Triage Acuity Predictor
 - **Algorithm**: scikit-learn RandomForestClassifier (96 trees, depth 12, at most 2 CPU workers)
@@ -82,8 +80,9 @@ and it must use only synthetic/public data, never patient PHI.
 - **Entity matching** on 14 categorical columns
 - **10 starter questions** + **8 benchmark questions** (8/8 passing)
 
-### 6. Dashboard — Hospital Command Center
-- Current published dashboard also includes daily job-run gaps, pipeline/data freshness, aggregated synthetic alerts and ML quality. Dashboard revisions are managed inside Databricks, not by this DAB source.
+### 6. Dashboards — Hospital Command Center
+- Canonical **CareFlow360 Hospital Command Center**: 3 pages, 29 widgets, 18 SQL datasets — overview, Operations & Freshness (job-run coverage, source-timestamp ages, pipeline freshness), and Quality & Model Monitoring. The lightweight **CareFlow360 Hospital Operations Dashboard** (1 page, 14 widgets, 6 datasets) is a companion summary view.
+- Dashboard revisions are managed inside Databricks, not by this DAB source.
 - Published with embedded credentials
 
 ## Engineering review and Free Edition limitations

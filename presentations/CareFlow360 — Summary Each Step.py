@@ -88,8 +88,8 @@
 # MAGIC ## 📈 Step 4: Gold Layer Aggregation
 # MAGIC
 # MAGIC ### What Was Built
-# MAGIC - 5 materialized views + 2 physical tables
-# MAGIC - Patient 360, command center, department hourly, live alerts, training features
+# MAGIC - 5 pipeline materialized views + 2 notebook-managed gold views + 3 physical tables
+# MAGIC - Patient 360, command center, department hourly, live alerts, training features (+ model-quality and current-prediction views)
 # MAGIC
 # MAGIC ### Key Learning: The Gold Layer Pattern
 # MAGIC
@@ -261,11 +261,11 @@
 # MAGIC
 # MAGIC - **SDP Pipeline**: IDLE, all recent updates COMPLETED, serverless + photon
 # MAGIC - **Daily Job**: Active schedule (2 AM UTC), all 6 tasks passing
-# MAGIC - **Dashboard**: 14 verified widgets
+# MAGIC - **Dashboards**: canonical Command Center (3 pages, 29 widgets, 18 datasets) + companion Operations Dashboard (14 widgets)
 # MAGIC - **Genie Space**: Production-ready, 8/8 benchmarks passed
 # MAGIC - **ML Model**: Trained, UC-registered with Champion alias, predictions written
 # MAGIC - **DAB**: Fully deployed with all resources created
-# MAGIC - **Updated Nov 3, 2026**: random 50–150 patients per run, 1,000 patients live, 16 presentation views, plus new Gold assets (triage_model_quality, chief_complaint_categories)
+# MAGIC - **Updated Nov 3, 2026**: random 50–150 patients per run, 1,000 patients live, 17 presentation views, plus new Gold assets (triage_model_quality, triage_predictions_current, chief_complaint_categories)
 # MAGIC
 # MAGIC ### New Notebook Added
 # MAGIC - **CareFlow360 — Complete Project Presentation** (ID: 3441798886909984) — Comprehensive presentation covering architecture, pipeline, job, ML/AI, dashboard, Genie, DAB, governance, AI functions, fixes, health, lessons, and file inventory.

@@ -110,8 +110,8 @@ silver_triage_quarantine = df.where(invalid)
 ## 📈 Step 4: Gold Layer Aggregation
 
 ### What Was Built
-- 5 materialized views + 2 physical tables
-- Patient 360, command center, department hourly, live alerts, training features
+- 5 pipeline materialized views + 2 notebook-managed gold views + 3 physical tables
+- Patient 360, command center, department hourly, live alerts, training features (+ model-quality and current-prediction views)
 
 ### Key Learning: The Gold Layer Pattern
 
@@ -160,8 +160,9 @@ pipeline = Pipeline([
 
 #### 3. Batch Scoring (Free Edition Compatible)
 ```python
-loaded = mlflow.pyfunc.load_model(f"models:/{full_model_name}@Champion")
-predictions = loaded.predict(features)
+# Score with the already-fitted/evaluated pipeline in memory —
+# no redundant mlflow.pyfunc.load_model registry download.
+predictions = pipeline.predict(features)
 ```
 
 ---

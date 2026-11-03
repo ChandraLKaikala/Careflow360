@@ -216,9 +216,11 @@ class ViewOutputTests(unittest.TestCase):
                   "gold_schema": "careflow360_gold"}
         execute_code(VIEWS, spark, FakeDbutils(values))
         statements = [x for x in spark.statements if "CREATE OR REPLACE VIEW" in x]
-        self.assertEqual(len(statements), 16)
-        self.assertEqual(len(set(statements)), 16)
+        self.assertEqual(len(statements), 17)
+        self.assertEqual(len(set(statements)), 17)
         self.assertTrue(any("careflow360_gold.triage_model_quality" in sql
+                            for sql in statements))
+        self.assertTrue(any("careflow360_gold.triage_predictions_current" in sql
                             for sql in statements))
         # The ai_classify category table already exists: its guarded
         # CREATE TABLE branch must not run (Free Edition AI quota safety).
